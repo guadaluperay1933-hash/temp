@@ -1,0 +1,23 @@
+[Version]
+Signature="$CHICAGO$"
+
+[SourceDisksNames]
+1="DLL",,0
+
+[SourceDisksFiles]
+msxml4.dll=1
+msxml4a.dll=1
+mxxml4r.dll=1
+BCGCBPRO800.dll=1
+
+[DestinationDirs]
+DefaultDestDir = 11
+
+[DefaultInstall]
+CopyFiles = @msxml4.dll,@msxml4a.dll,@msxml4r.dll,@BCGCBPRO800.dll
+RegisterDlls=msxml4Register
+
+[msxml4Register]
+11,,msxml4.dll,1
+
+

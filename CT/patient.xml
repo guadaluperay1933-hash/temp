@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="patient.xsl"?>
+<ExamList><Exam><PatLocalId>0004786057</PatLocalId><Name>杨青梅</Name><StudyDate>2026-09-08</StudyDate><StudyTime>14:19:24</StudyTime><ImagePath>杨青梅_2026-09-08_CT</ImagePath><ImageCount>485</ImageCount><CommonDir></CommonDir><ReportList><Report>0002681165_1</Report></ReportList></Exam></ExamList>

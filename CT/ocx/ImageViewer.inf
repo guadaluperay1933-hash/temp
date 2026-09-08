@@ -1,0 +1,16 @@
+;INF file for ImageViewer.ocx
+[Add.Code]
+WebImageViewer.ocx=WebImageViewer.ocx
+BCGCBPRO800.dll=BCGCBPRO800.dll
+
+[BCGCBPRO800.dll]
+file-win32-x86=BCGCBPRO800.dll
+RegisterServer=no
+DestDir=11
+FileVersion=8,0,0,0
+
+[WebImageViewer.ocx]
+file=WebImageViewer.ocx
+clsid={2DEEE3DC-11A2-4FA2-92E8-45C70296221F}
+RegisterServer=yes
+FileVersion=3,5,35,1119
