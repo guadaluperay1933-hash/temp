@@ -53,10 +53,29 @@ FMT_P  = '0.00%'         # 比例
 
 fill = lambda c: PatternFill("solid", fgColor=c)
 
-def title_bar(ws, last_col, text, note=None, note_row_h=30):
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
-    c = ws.cell(1, 1, text); c.font = F_TITLE; c.fill = fill(C_TITLE); c.alignment = A_C
-    ws.row_dimensions[1].height = 30
+CO_REF = "使用说明!$B$2"          # 企业名称（全局引用，在【使用说明】B2填写一次即可）
+DASH = Side(style="dashed", color="9BA6B2")
+
+def logo_box(ws, c2=2, r=1):
+    """表头左上角预留公司LOGO位置：选中该区域→插入→图片，即可放入企业LOGO。"""
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=c2)
+    c = ws.cell(r, 1, "公司 LOGO\n（选中本区域插入图片）")
+    c.font = Font(name=FN, size=8.5, color="808080")
+    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    c.fill = PatternFill("solid", fgColor="FFFFFF")
+    for cc in range(1, c2 + 1):
+        ws.cell(r, cc).border = Border(left=DASH, right=DASH, top=DASH, bottom=DASH)
+
+def co_title(text):
+    """标题自动冠以【使用说明】B2填写的企业名称"""
+    t = str(text).replace('"', '”')
+    return '=IF(%s="","",%s&"    ")&"%s"' % (CO_REF, CO_REF, t)
+
+def title_bar(ws, last_col, text, note=None, note_row_h=30, logo_cols=2):
+    logo_box(ws, logo_cols)
+    ws.merge_cells(start_row=1, start_column=logo_cols + 1, end_row=1, end_column=last_col)
+    c = ws.cell(1, logo_cols + 1, co_title(text)); c.font = F_TITLE; c.fill = fill(C_TITLE); c.alignment = A_C
+    ws.row_dimensions[1].height = 44
     if note is not None:
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
         c = ws.cell(2, 1, note); c.font = F_NOTE; c.fill = fill(C_NOTE); c.alignment = A_L
@@ -85,8 +104,15 @@ wb.remove(wb.active)
 # ============================================================
 ws = wb.create_sheet("使用说明")
 widths(ws, {"A": 4, "B": 16, "C": 26, "D": 30, "E": 30, "F": 26, "G": 22})
-title_bar(ws, 7, "研发费用归集与分摊台账  使用说明", None)
-ws["A1"].value = "研发费用归集与分摊台账（%d年度）  使用说明" % YEAR
+title_bar(ws, 7, "研发费用归集与分摊台账（%d年度）  使用说明" % YEAR, None)
+ws.merge_cells("A2:B2")
+c = ws.cell(2, 1, "企业名称："); c.font = F_BOLD; c.alignment = A_R
+ws.merge_cells("C2:E2")
+c = ws.cell(2, 3, ""); c.font = Font(name=FN, size=12, bold=True, color="1F4E79")
+c.fill = fill(C_INPUT); c.alignment = A_C; c.border = BORDER
+ws.merge_cells("F2:G2")
+c = ws.cell(2, 6, "← 填一次，全表标题自动带出"); c.font = F_NOTE; c.alignment = A_L
+ws.row_dimensions[2].height = 26
 
 rows = [
     ("H2", "一、适用范围", None),
@@ -1091,10 +1117,11 @@ setup_print(ws)
 # ============================================================
 ws = wb.create_sheet("费用分配说明")
 widths(ws, {"A":3,"B":13,"C":16,"D":16,"E":16,"F":16,"G":16,"H":16,"I":10})
-ws.merge_cells("A1:I1")
-c = ws.cell(1,1,"研发人员及仪器设备、无形资产费用分配说明")
+logo_box(ws, 3)
+ws.merge_cells("D1:I1")
+c = ws.cell(1,4,co_title("研发人员及仪器设备、无形资产费用分配说明"))
 c.font = Font(name=FN, size=16, bold=True); c.alignment = A_C
-ws.row_dimensions[1].height = 40
+ws.row_dimensions[1].height = 46
 ws.merge_cells("A2:I2")
 c = ws.cell(2,1,"（%d年度  ·  按月核算、按年汇总）" % YEAR)
 c.font = Font(name=FN, size=11); c.alignment = A_C
@@ -1205,9 +1232,10 @@ def build_form(name, title, left, right, proj_label, note, sign_line, unit_row):
     w = wb.create_sheet(name)
     pc = len(left) + 1
     lastc = pc + NP + len(right) - 1
-    w.merge_cells(start_row=1, start_column=1, end_row=1, end_column=lastc)
-    c = w.cell(1, 1, title); c.font = Font(name=FN, size=16, bold=True); c.alignment = A_C
-    w.row_dimensions[1].height = 36
+    logo_box(w, 3)
+    w.merge_cells(start_row=1, start_column=4, end_row=1, end_column=lastc)
+    c = w.cell(1, 4, co_title(title)); c.font = Font(name=FN, size=15, bold=True); c.alignment = A_C
+    w.row_dimensions[1].height = 46
     w.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(4, lastc // 2))
     c = w.cell(2, 1, unit_row); c.font = Font(name=FN, size=11); c.alignment = A_L
     w.merge_cells(start_row=2, start_column=lastc - 3, end_row=2, end_column=lastc)
