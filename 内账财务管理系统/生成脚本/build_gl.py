@@ -921,7 +921,7 @@ print('  ✓ 库存收发存 / 应收跟进 / 应付跟进')
 ws = wb.create_sheet(SH_ANA)
 title(ws, '经营分析', 'K', '全年 12 个月趋势。数据全部取自科目余额表口径以外的业务表，可与利润表交叉验证。')
 widths(ws, {'A':10,'B':15,'C':15,'D':14,'E':10,'F':14,'G':14,'H':14,'I':14,'J':15,'K':15})
-headers(ws, 5, 1, ['月份','销售收入\n(不含税)','销售成本','毛利','毛利率','采购金额\n(不含税)','费用支出',
+headers(ws, 5, 1, ['月份','销售收入\n(不含税)','销售成本','毛利','毛利率','采购金额\n(不含税)','期间费用',
                    '资金流入','资金流出','资金净额','期末资金余额'])
 for i in range(12):
     r = 6 + i
@@ -933,11 +933,19 @@ for i in range(12):
     put(ws, f'D{r}', f'=$B{r}-$C{r}', font=F_TXT, fmt=MONEY)
     put(ws, f'E{r}', f'=IFERROR($D{r}/$B{r},"")', font=F_TXT, fmt=PCT)
     put(ws, f'F{r}', f'=SUMIFS({BUYQ}!$Q${BUY_R0}:$Q${BUY_R1},{BUYQ}!$C${BUY_R0}:$C${BUY_R1},{m})', font=F_LINK, fmt=MONEY)
-    put(ws, f'G{r}', f'=SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{m},'
-                     f'{CASHQ}!$D${CASH_R0}:$D${CASH_R1},"支出")', font=F_LINK, fmt=MONEY)
+    ep = []
+    for pat in ['"66*"', '"6403"', '"6711"']:
+        ep.append(f'SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$O${CASH_R0}:$O${CASH_R1},{pat},'
+                  f'{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{m})')
+        ep.append(f'SUMIFS({OTHQ}!$H${OTH_R0}:$H${OTH_R1},{OTHQ}!$F${OTH_R0}:$F${OTH_R1},{pat},'
+                  f'{OTHQ}!$C${OTH_R0}:$C${OTH_R1},{m})')
+        ep.append(f'SUMIFS({BUYQ}!$W${BUY_R0}:$W${BUY_R1},{BUYQ}!$U${BUY_R0}:$U${BUY_R1},{pat},'
+                  f'{BUYQ}!$C${BUY_R0}:$C${BUY_R1},{m})')
+    put(ws, f'G{r}', '=' + '+'.join(ep), font=F_LINK, fmt=MONEY)
     put(ws, f'H{r}', f'=SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{m},'
                      f'{CASHQ}!$D${CASH_R0}:$D${CASH_R1},"收入")', font=F_LINK, fmt=MONEY)
-    put(ws, f'I{r}', f'=$G{r}', font=F_TXT, fmt=MONEY)
+    put(ws, f'I{r}', f'=SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{m},'
+                     f'{CASHQ}!$D${CASH_R0}:$D${CASH_R1},"支出")', font=F_TXT, fmt=MONEY)
     put(ws, f'J{r}', f'=$H{r}-$I{r}', font=F_TXT, fmt=MONEY)
     put(ws, f'K{r}', f'=SUM({Q(SH_OPEN)}!$B${OC_R0}:$B${OC_R1})+SUM($J$6:$J{r})', font=F_TXT, fmt=MONEY)
     ws.row_dimensions[r].height = 18
@@ -1203,8 +1211,349 @@ for a, b in HELP:
     r += 1
 page(ws, titles=None, landscape=False)
 
-ORDER = [SH_HOME, SH_HELP, SH_PARAM, SH_BASE, SH_OPEN, SH_CASH, SH_SAL, SH_BUY, SH_OTH,
-         SH_TB, SH_PL, SH_BS, SH_CF, SH_BAL, SH_INV, SH_AR, SH_AP, SH_ANA, SH_CHK]
+
+# ============================================================ 固定资产台账
+ws = wb.create_sheet(SH_FA)
+R0, R1 = FA_R0, FA_R1
+title(ws, '固定资产台账', 'N',
+      '本表自动算出每月应提折旧。月末请把最下面的「本月折旧合计」按使用部门在【其他凭证】做一笔计提分录（借 管理费用/销售费用 贷 累计折旧）。')
+widths(ws, {'A':13,'B':20,'C':12,'D':11,'E':12,'F':14,'G':9,'H':8,'I':13,'J':9,'K':14,'L':14,'M':9,'N':16})
+put(ws, 'A3', '查询月份', font=F_H2, align=CR, border=None)
+put(ws, 'B3', f'={YM_CELL}', font=F_TOT, fill=FILL_TOT)
+inband(ws, 'A', 'H', 4); sysband(ws, 'I', 'N', 4)
+headers(ws, 5, 1, ['资产编号','资产名称','类别','使用部门','购入日期','原值','使用\n年限','残值率'])
+headers(ws, 5, 9, ['月折旧额','已提\n月数','累计折旧','账面净值','状态','备注'], fill=FILL_AUTO, font=F_HDR2)
+for r in range(R0, R1 + 1):
+    for c, fmt, tx in [('A', None, 0), ('B', None, 1), ('C', None, 0), ('D', None, 0),
+                       ('E', DATE, 0), ('F', MONEY, 0), ('G', '0', 0), ('H', PCT, 0)]:
+        put(ws, f'{c}{r}', None, font=F_IN, fill=FILL_IN, align=CL if tx else C, fmt=fmt)
+    put(ws, f'I{r}', f'=IF(OR($B{r}="",N($G{r})=0),"",ROUND(N($F{r})*(1-N($H{r}))/N($G{r})/12,2))',
+        font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'J{r}', f'=IF(OR($B{r}="",$E{r}=""),"",MEDIAN(0,(YEAR({EOM_CELL})-YEAR($E{r}))*12'
+                     f'+MONTH({EOM_CELL})-MONTH($E{r}),N($G{r})*12))', font=F_LINK, fill=FILL_AUTO, fmt='0')
+    put(ws, f'K{r}', f'=IF($B{r}="","",ROUND(N($I{r})*N($J{r}),2))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'L{r}', f'=IF($B{r}="","",N($F{r})-N($K{r}))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'M{r}', f'=IF($B{r}="","",IF(N($J{r})>=N($G{r})*12,"已提完","计提中"))', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'N{r}', None, font=F_IN, fill=FILL_IN, align=CL)
+    ws.row_dimensions[r].height = 16
+TR = R1 + 1
+put(ws, f'A{TR}', '合  计', font=F_TOT, fill=FILL_TOT)
+for c in ['B','C','D','E','G','H','J','M','N']: put(ws, f'{c}{TR}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['F','K','L']:
+    put(ws, f'{c}{TR}', f'=SUM({c}{R0}:{c}{R1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'I{TR}', f'=SUMIF($M{R0}:$M{R1},"计提中",$I{R0}:$I{R1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'A{TR+2}', '本月应计提折旧合计 →', font=F_H2, align=CR, border=None)
+ws.merge_cells(f'A{TR+2}:C{TR+2}')
+put(ws, f'D{TR+2}', f'=$I${TR}', font=F_BIG, fill=FILL_CHK, fmt=MONEY)
+ws.merge_cells(f'D{TR+2}:E{TR+2}'); put(ws, f'E{TR+2}', None, fill=FILL_CHK)
+put(ws, f'F{TR+2}', '请到【其他凭证】做：业务类型「折旧计提」，借方 6602 管理费用（或按部门用 6601 销售费用），贷方 1602 累计折旧。',
+    font=F_NOTE, align=CL, border=None)
+ws.merge_cells(f'F{TR+2}:N{TR+2}')
+dv_list(ws, f'D{R0}:D{R1}', f'={B_DEP_N}')
+dv_list(ws, f'C{R0}:C{R1}', '"房屋建筑物,机器设备,运输工具,电子设备,办公家具,其他"')
+dv_num(ws, f'F{R0}:F{R1}'); dv_num(ws, f'G{R0}:G{R1}', 'greaterThan', '0')
+ws.freeze_panes = 'C6'; page(ws, titles='5:5')
+
+# ============================================================ 工资表
+ws = wb.create_sheet(SH_PAYROLL)
+R0, R1 = PAY_R0, PAY_R1
+title(ws, '工资表', 'N',
+      '计提用最右边的「单位负担合计」，发放用「实发工资」。两笔分录分别在【其他凭证】（计提）和【资金流水】（发放）登记。')
+widths(ws, {'A':12,'B':11,'C':13,'D':12,'E':12,'F':14,'G':12,'H':12,'I':11,'J':14,'K':12,'L':12,'M':15,'N':14})
+put(ws, 'A3', '工资月份', font=F_H2, align=CR, border=None)
+put(ws, 'B3', f'={YM_CELL}', font=F_TOT, fill=FILL_TOT)
+inband(ws, 'A', 'I', 4); sysband(ws, 'J', 'N', 4)
+headers(ws, 5, 1, ['姓名','部门','基本工资','绩效奖金','补贴津贴','应发合计','社保\n(个人)','公积金\n(个人)','个人所得税'])
+headers(ws, 5, 10, ['实发工资','社保\n(单位)','公积金\n(单位)','单位负担合计','备注'], fill=FILL_AUTO, font=F_HDR2)
+for r in range(R0, R1 + 1):
+    put(ws, f'A{r}', None, font=F_IN, fill=FILL_IN)
+    put(ws, f'B{r}', f'=IF($A{r}="","",{lookup(f"$A{r}", B_EMP_N, f"{BASE}!$L${EMP_R0}:$L${EMP_R1}")})', font=F_LINK)
+    for c in ['C','D','E','G','H','I','K','L']:
+        put(ws, f'{c}{r}', None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'F{r}', f'=IF($A{r}="","",N($C{r})+N($D{r})+N($E{r}))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'J{r}', f'=IF($A{r}="","",N($F{r})-N($G{r})-N($H{r})-N($I{r}))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'M{r}', f'=IF($A{r}="","",N($F{r})+N($K{r})+N($L{r}))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'N{r}', None, font=F_IN, fill=FILL_IN, align=CL)
+    ws.row_dimensions[r].height = 16
+TR = R1 + 1
+put(ws, f'A{TR}', '合  计', font=F_TOT, fill=FILL_TOT); put(ws, f'B{TR}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['C','D','E','F','G','H','I','J','K','L','M']:
+    put(ws, f'{c}{TR}', f'=SUM({c}{R0}:{c}{R1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'N{TR}', None, font=F_TOT, fill=FILL_TOT)
+put(ws, f'A{TR+2}', '① 月末计提：借 6602 管理费用（按部门也可用 6601）', font=F_NOTE, align=CL, border=None)
+ws.merge_cells(f'A{TR+2}:E{TR+2}')
+put(ws, f'F{TR+2}', f'=$M${TR}', font=F_TOT, fill=FILL_CHK, fmt=MONEY)
+put(ws, f'G{TR+2}', '贷 2211 应付职工薪酬（同额）→ 记在【其他凭证】，业务类型选「工资计提」',
+    font=F_NOTE, align=CL, border=None); ws.merge_cells(f'G{TR+2}:N{TR+2}')
+put(ws, f'A{TR+3}', '② 实际发放：借 2211 应付职工薪酬', font=F_NOTE, align=CL, border=None)
+ws.merge_cells(f'A{TR+3}:E{TR+3}')
+put(ws, f'F{TR+3}', f'=$J${TR}', font=F_TOT, fill=FILL_CHK, fmt=MONEY)
+put(ws, f'G{TR+3}', '贷 银行存款 → 记在【资金流水】，收支科目选「工资发放」。代扣的社保个税单独在缴纳时登记。',
+    font=F_NOTE, align=CL, border=None); ws.merge_cells(f'G{TR+3}:N{TR+3}')
+dv_list(ws, f'A{R0}:A{R1}', f'={B_EMP_N}')
+for c in ['C','D','E','G','H','I','K','L']: dv_num(ws, f'{c}{R0}:{c}{R1}')
+ws.freeze_panes = 'C6'; page(ws, titles='5:5')
+print('  ✓ 固定资产台账 / 工资表')
+
+# ============================================================ 辅助核算
+SH_AUX2 = '辅助核算'
+ws = wb.create_sheet(SH_AUX2)
+title(ws, '辅助核算', 'AA', '客户、供应商、部门、员工四个维度的本月汇总。数据全部来自录入表，与总账同源。')
+widths(ws, {'A':16,'B':13,'C':13,'D':13,'E':13,'F':10,'G':3,
+            'H':16,'I':13,'J':13,'K':13,'L':13,'M':10,'N':3,
+            'O':12,'P':13,'Q':13,'R':13,'S':13,'T':13,'U':3,
+            'V':11,'W':11,'X':13,'Y':13,'Z':13,'AA':13})
+put(ws, 'A3', '查询月份', font=F_H2, align=CR, border=None)
+put(ws, 'B3', f'={YM_CELL}', font=F_TOT, fill=FILL_TOT)
+block(ws, 1, 6, 5, '① 客户', ['客户','本月销售','本月回款','期末应收','逾期应收','业务员'], CUS_R0, CUS_R1)
+block(ws, 8, 6, 5, '② 供应商', ['供应商','本月采购','本月付款','期末应付','逾期应付','采购员'], SUP_R0, SUP_R1)
+block(ws, 15, 6, 5, '③ 部门', ['部门','本月销售额','本月销售成本','本月毛利','本月期间费用','部门利润'], DEP_R0, DEP_R1)
+block(ws, 22, 6, 5, '④ 员工', ['姓名','部门','经办销售额','经办采购额','经办收款','经办付款'], EMP_R0, EMP_R1)
+ARQ2, APQ2 = Q(SH_AR), Q(SH_AP)
+for r in range(CUS_R0, CUS_R1 + 1):
+    a = f'$A{r}'
+    put(ws, f'A{r}', f'=IF({ARQ2}!$A{r}="","",{ARQ2}!$A{r})', font=F_LINK, align=CL)
+    for col, src in [('B', 'D'), ('C', 'E'), ('D', 'F'), ('E', 'L'), ('F', 'N')]:
+        put(ws, f'{col}{r}', f'=IF({a}="","",{ARQ2}!${src}{r})', font=F_LINK,
+            fmt=None if col == 'F' else MONEY)
+    ws.row_dimensions[r].height = 16
+for r in range(SUP_R0, SUP_R1 + 1):
+    a = f'$H{r}'
+    put(ws, f'H{r}', f'=IF({APQ2}!$A{r}="","",{APQ2}!$A{r})', font=F_LINK, align=CL)
+    for col, src in [('I', 'D'), ('J', 'E'), ('K', 'F'), ('L', 'L'), ('M', 'N')]:
+        put(ws, f'{col}{r}', f'=IF({a}="","",{APQ2}!${src}{r})', font=F_LINK,
+            fmt=None if col == 'M' else MONEY)
+    ws.row_dimensions[r].height = 16
+# 科目编码是文本，用 ">=6400" 会被当数字比而永不匹配，必须用通配符
+EXP_PATS = ['"66*"', '"6403"', '"6711"']
+for r in range(DEP_R0, DEP_R1 + 1):
+    a = f'$O{r}'
+    put(ws, f'O{r}', f'=IF({BASE}!$G{r}="","",{BASE}!$G{r})', font=F_LINK)
+    put(ws, f'P{r}', f'=IF({a}="","",SUMIFS({SALQ}!$O${SAL_R0}:$O${SAL_R1},{SALQ}!$I${SAL_R0}:$I${SAL_R1},{a},'
+                     f'{SALQ}!$C${SAL_R0}:$C${SAL_R1},{YM_CELL}))', font=F_LINK, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF({a}="","",SUMIFS({SALQ}!$S${SAL_R0}:$S${SAL_R1},{SALQ}!$I${SAL_R0}:$I${SAL_R1},{a},'
+                     f'{SALQ}!$C${SAL_R0}:$C${SAL_R1},{YM_CELL}))', font=F_LINK, fmt=MONEY)
+    put(ws, f'R{r}', f'=IF({a}="","",$P{r}-$Q{r})', font=F_TXT, fmt=MONEY)
+    exp_terms = []
+    for pat in EXP_PATS:
+        exp_terms.append(f'SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$H${CASH_R0}:$H${CASH_R1},{a},'
+                         f'{CASHQ}!$O${CASH_R0}:$O${CASH_R1},{pat},{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{YM_CELL})')
+        exp_terms.append(f'SUMIFS({OTHQ}!$H${OTH_R0}:$H${OTH_R1},{OTHQ}!$I${OTH_R0}:$I${OTH_R1},{a},'
+                         f'{OTHQ}!$F${OTH_R0}:$F${OTH_R1},{pat},{OTHQ}!$C${OTH_R0}:$C${OTH_R1},{YM_CELL})')
+        exp_terms.append(f'SUMIFS({BUYQ}!$W${BUY_R0}:$W${BUY_R1},{BUYQ}!$K${BUY_R0}:$K${BUY_R1},{a},'
+                         f'{BUYQ}!$U${BUY_R0}:$U${BUY_R1},{pat},{BUYQ}!$C${BUY_R0}:$C${BUY_R1},{YM_CELL})')
+    put(ws, f'S{r}', f'=IF({a}="","",' + '+'.join(exp_terms) + ')', font=F_LINK, fmt=MONEY)
+    put(ws, f'T{r}', f'=IF({a}="","",$R{r}-$S{r})', font=F_TOT, fmt=MONEY)
+    ws.row_dimensions[r].height = 16
+for r in range(EMP_R0, EMP_R1 + 1):
+    a = f'$V{r}'
+    put(ws, f'V{r}', f'=IF({BASE}!$K{r}="","",{BASE}!$K{r})', font=F_LINK)
+    put(ws, f'W{r}', f'=IF({a}="","",{BASE}!$L{r})', font=F_LINK)
+    put(ws, f'X{r}', f'=IF({a}="","",SUMIFS({SALQ}!$O${SAL_R0}:$O${SAL_R1},{SALQ}!$J${SAL_R0}:$J${SAL_R1},{a},'
+                     f'{SALQ}!$C${SAL_R0}:$C${SAL_R1},{YM_CELL}))', font=F_LINK, fmt=MONEY)
+    put(ws, f'Y{r}', f'=IF({a}="","",SUMIFS({BUYQ}!$Q${BUY_R0}:$Q${BUY_R1},{BUYQ}!$L${BUY_R0}:$L${BUY_R1},{a},'
+                     f'{BUYQ}!$C${BUY_R0}:$C${BUY_R1},{YM_CELL}))', font=F_LINK, fmt=MONEY)
+    put(ws, f'Z{r}', f'=IF({a}="","",SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$I${CASH_R0}:$I${CASH_R1},{a},'
+                     f'{CASHQ}!$D${CASH_R0}:$D${CASH_R1},"收入",{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{YM_CELL}))',
+        font=F_LINK, fmt=MONEY)
+    put(ws, f'AA{r}', f'=IF({a}="","",SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$I${CASH_R0}:$I${CASH_R1},{a},'
+                      f'{CASHQ}!$D${CASH_R0}:$D${CASH_R1},"支出",{CASHQ}!$C${CASH_R0}:$C${CASH_R1},{YM_CELL}))',
+        font=F_LINK, fmt=MONEY)
+    ws.row_dimensions[r].height = 16
+for c0, r1, cols in [('A', CUS_R1, ['B','C','D','E']), ('H', SUP_R1, ['I','J','K','L']),
+                     ('O', DEP_R1, ['P','Q','R','S','T']), ('V', EMP_R1, ['X','Y','Z','AA'])]:
+    TR = r1 + 1
+    put(ws, f'{c0}{TR}', '合计', font=F_TOT, fill=FILL_TOT)
+    for c in cols:
+        put(ws, f'{c}{TR}', f'=SUM({c}{6}:{c}{r1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+ws.freeze_panes = 'A6'; page(ws, titles='5:5')
+
+# ============================================================ 科目分析
+SH_ACA = '科目分析'
+ws = wb.create_sheet(SH_ACA)
+title(ws, '科目分析（对方科目）', 'F',
+      '选一个科目，看它本月的钱是从哪些科目来、又到哪些科目去。查账定位最快的一张表。')
+widths(ws, {'A':13,'B':22,'C':17,'D':17,'E':14,'F':40})
+put(ws, 'A3', '选择科目', font=F_H2, fill=FILL_HDR2)
+put(ws, 'B3', '1122', font=Font(name='微软雅黑', size=11, bold=True, color='0000C0'), fill=FILL_IN)
+put(ws, 'C3', f'=IFERROR(INDEX({PAR_ACC_N},MATCH($B$3,{PAR_ACC_C},0)),"⚠ 科目不存在")', font=F_TOT, fill=FILL_TOT, align=CL)
+put(ws, 'D3', '查询月份', font=F_NOTE, align=CR, border=None)
+put(ws, 'E3', f'={YM_CELL}', font=F_TOT, fill=FILL_TOT)
+dv_list(ws, 'B3', f'={PAR_ACC_C}')
+headers(ws, 5, 1, ['对方科目','对方科目名称','本月借方\n(本科目增加)','本月贷方\n(本科目减少)','净额','说明'])
+def pair(side, other_ref):
+    """side='D'：本科目在借方、对方在贷方"""
+    ts = []
+    for sh, amt, dr, cr, mc, dc, r0, r1 in SLOTS:
+        me, ot = (dr, cr) if side == 'D' else (cr, dr)
+        ts.append(f'SUMIFS({sh}!${amt}${r0}:${amt}${r1},{sh}!${me}${r0}:${me}${r1},$B$3,'
+                  f'{sh}!${ot}${r0}:${ot}${r1},{other_ref},{sh}!${mc}${r0}:${mc}${r1},{YM_CELL})')
+    return '+'.join(ts)
+for r in range(ACC_R0, ACC_R1 + 1):
+    a = f'$A{r}'
+    put(ws, f'A{r}', f'=IF({PARAM}!$A{r}="","",{PARAM}!$A{r})', font=F_LINK)
+    put(ws, f'B{r}', f'=IF({a}="","",{PARAM}!$B{r})', font=F_LINK, align=CL)
+    put(ws, f'C{r}', f'=IF({a}="","",{pair("D", a)})', font=F_LINK, fmt=MONEY)
+    put(ws, f'D{r}', f'=IF({a}="","",{pair("C", a)})', font=F_LINK, fmt=MONEY)
+    put(ws, f'E{r}', f'=IF({a}="","",$C{r}-$D{r})', font=F_TXT, fmt=MONEY)
+    put(ws, f'F{r}', f'=IF(OR({a}="",AND($C{r}=0,$D{r}=0)),"",'
+                     f'IF($C{r}>0,"借 "&$C$3&" / 贷 "&$B{r},"")&IF(AND($C{r}>0,$D{r}>0)," ；","")'
+                     f'&IF($D{r}>0,"借 "&$B{r}&" / 贷 "&$C$3,""))', font=F_TXT, align=CL)
+    ws.row_dimensions[r].height = 16
+TR = ACC_R1 + 1
+put(ws, f'A{TR}', '合  计', font=F_TOT, fill=FILL_TOT); put(ws, f'B{TR}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['C','D','E']:
+    put(ws, f'{c}{TR}', f'=SUM({c}{ACC_R0}:{c}{ACC_R1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'F{TR}', None, font=F_TOT, fill=FILL_TOT)
+ws.freeze_panes = 'A6'; page(ws, titles='5:5')
+print('  ✓ 辅助核算 / 科目分析')
+
+# ============================================================ 往来对账单
+SH_SOA1, SH_SOA2 = '客户对账单', '供应商对账单'
+SOA_N = 100   # 明细行数
+
+def add_seq(sheet, col, cond):
+    ws2 = wb[sheet]
+    r0, r1 = {SH_SAL: (SAL_R0, SAL_R1), SH_BUY: (BUY_R0, BUY_R1), SH_CASH: (CASH_R0, CASH_R1)}[sheet]
+    put(ws2, f'{col}4', '对账\n序号', font=F_HDR2, fill=FILL_AUTO)
+    ws2.column_dimensions[col].width = 8
+    for r in range(r0, r1 + 1):
+        put(ws2, f'{col}{r}', cond(r), font=F_LINK, fill=FILL_AUTO)
+
+S1, S2 = Q(SH_SOA1), Q(SH_SOA2)
+add_seq(SH_SAL, 'AE', lambda r: (
+    f'=IF(AND($D{r}={S1}!$B$3,$B{r}>={S1}!$E$3,$B{r}<={S1}!$H$3),'
+    f'COUNTIFS($D${SAL_R0}:$D{r},{S1}!$B$3,$B${SAL_R0}:$B{r},">="&{S1}!$E$3,$B${SAL_R0}:$B{r},"<="&{S1}!$H$3),"")'))
+add_seq(SH_CASH, 'V', lambda r: (
+    f'=IF(AND($G{r}={S1}!$B$3,$E{r}="客户回款",$B{r}>={S1}!$E$3,$B{r}<={S1}!$H$3),'
+    f'COUNTIFS($G${CASH_R0}:$G{r},{S1}!$B$3,$E${CASH_R0}:$E{r},"客户回款",'
+    f'$B${CASH_R0}:$B{r},">="&{S1}!$E$3,$B${CASH_R0}:$B{r},"<="&{S1}!$H$3),"")'))
+add_seq(SH_BUY, 'AA', lambda r: (
+    f'=IF(AND($D{r}={S2}!$B$3,$B{r}>={S2}!$E$3,$B{r}<={S2}!$H$3),'
+    f'COUNTIFS($D${BUY_R0}:$D{r},{S2}!$B$3,$B${BUY_R0}:$B{r},">="&{S2}!$E$3,$B${BUY_R0}:$B{r},"<="&{S2}!$H$3),"")'))
+add_seq(SH_CASH, 'W', lambda r: (
+    f'=IF(AND($G{r}={S2}!$B$3,$E{r}="供应商付款",$B{r}>={S2}!$E$3,$B{r}<={S2}!$H$3),'
+    f'COUNTIFS($G${CASH_R0}:$G{r},{S2}!$B$3,$E${CASH_R0}:$E{r},"供应商付款",'
+    f'$B${CASH_R0}:$B{r},">="&{S2}!$E$3,$B${CASH_R0}:$B{r},"<="&{S2}!$H$3),"")'))
+
+def build_soa(sheet, is_ar):
+    ws = wb.create_sheet(sheet)
+    who = '客户' if is_ar else '供应商'
+    biz, seq_b, party_src = ((SALQ, 'AE', B_CUS_N) if is_ar else (BUYQ, 'AA', B_SUP_N))
+    br0, br1 = (SAL_R0, SAL_R1) if is_ar else (BUY_R0, BUY_R1)
+    seq_c = 'V' if is_ar else 'W'
+    op_party, op_date, op_amt, o0, o1 = (('E', 'F', 'G', OR_R0, OR_R1) if is_ar
+                                         else ('J', 'K', 'L', OP_R0, OP_R1))
+    amt_c = 'Q' if is_ar else 'S'
+    title(ws, f'{who}对账单', 'M',
+          f'选好{who}和起止日期即可打印。左边是本期业务明细，右边是本期{"收款" if is_ar else "付款"}明细，'
+          f'上方四个数是对账结论。')
+    widths(ws, {'A':12,'B':18,'C':9,'D':11,'E':13,'F':12,'G':3,'H':12,'I':13,'J':13,'K':20,'L':11,'M':11})
+    put(ws, 'A3', who, font=F_H2, fill=FILL_HDR2)
+    put(ws, 'B3', None, font=Font(name='微软雅黑', size=11, bold=True, color='0000C0'), fill=FILL_IN)
+    put(ws, 'D3', '起始日期', font=F_H2, fill=FILL_HDR2)
+    put(ws, 'E3', f'={BOM_CELL}', font=Font(name='微软雅黑', size=10, bold=True, color='0000C0'),
+        fill=FILL_IN, fmt=DATE)
+    put(ws, 'G3', '结束日期', font=F_H2, fill=FILL_HDR2); ws.merge_cells('G3:G3')
+    put(ws, 'H3', f'={EOM_CELL}', font=Font(name='微软雅黑', size=10, bold=True, color='0000C0'),
+        fill=FILL_IN, fmt=DATE)
+    put(ws, 'J3', '对账状态', font=F_H2, fill=FILL_HDR2)
+    put(ws, 'K3', '待对方确认', font=F_IN, fill=FILL_IN, align=CL); ws.merge_cells('K3:M3')
+    put(ws, 'L3', None, fill=FILL_IN); put(ws, 'M3', None, fill=FILL_IN)
+    dv_list(ws, 'B3', f'={party_src}')
+    SUMS = [(f'期初应{"收" if is_ar else "付"}', 'A', 'B'), (f'本期{"销售" if is_ar else "采购"}', 'D', 'E'),
+            (f'本期{"收款" if is_ar else "付款"}', 'G', 'H'), (f'期末应{"收" if is_ar else "付"}', 'J', 'K')]
+    OP = Q(SH_OPEN)
+    f_open = (f'SUMIFS({OP}!${op_amt}${o0}:${op_amt}${o1},{OP}!${op_party}${o0}:${op_party}${o1},$B$3,'
+              f'{OP}!${op_date}${o0}:${op_date}${o1},"<"&$E$3)'
+              f'+SUMIFS({biz}!${amt_c}${br0}:${amt_c}${br1},{biz}!$D${br0}:$D${br1},$B$3,'
+              f'{biz}!$B${br0}:$B${br1},"<"&$E$3)'
+              f'-SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$G${CASH_R0}:$G${CASH_R1},$B$3,'
+              f'{CASHQ}!$E${CASH_R0}:$E${CASH_R1},"{"客户回款" if is_ar else "供应商付款"}",'
+              f'{CASHQ}!$B${CASH_R0}:$B${CASH_R1},"<"&$E$3)')
+    f_biz = (f'SUMIFS({biz}!${amt_c}${br0}:${amt_c}${br1},{biz}!$D${br0}:$D${br1},$B$3,'
+             f'{biz}!$B${br0}:$B${br1},">="&$E$3,{biz}!$B${br0}:$B${br1},"<="&$H$3)')
+    f_pay = (f'SUMIFS({CASHQ}!$N${CASH_R0}:$N${CASH_R1},{CASHQ}!$G${CASH_R0}:$G${CASH_R1},$B$3,'
+             f'{CASHQ}!$E${CASH_R0}:$E${CASH_R1},"{"客户回款" if is_ar else "供应商付款"}",'
+             f'{CASHQ}!$B${CASH_R0}:$B${CASH_R1},">="&$E$3,{CASHQ}!$B${CASH_R0}:$B${CASH_R1},"<="&$H$3)')
+    for (lab, lc, vc), f in zip(SUMS, [f_open, f_biz, f_pay, '=$B$5+$E$5-$H$5']):
+        put(ws, f'{lc}5', lab, font=F_TOT, fill=FILL_TOT)
+        put(ws, f'{vc}5', f if f.startswith('=') else '=' + f, font=F_BIG, fill=FILL_CHK, fmt=MONEY)
+    for c in ['C','F','I','L','M']: put(ws, f'{c}5', None, font=F_TOT, fill=FILL_TOT)
+    ws.row_dimensions[5].height = 28
+    hdr(ws, 'A7', f'本期{"销售" if is_ar else "采购"}明细', 'A7:F7', font=F_HDR, fill=FILL_HDR)
+    hdr(ws, 'H7', f'本期{"收款" if is_ar else "付款"}明细', 'H7:M7', font=F_HDR, fill=FILL_HDR)
+    headers(ws, 8, 1, ['日期', '商品 / 内容', '数量', '单价', '价税合计', '到期日'], fill=FILL_HDR2, font=F_HDR2)
+    headers(ws, 8, 8, ['日期', '收款账户' if is_ar else '付款账户', '金额', '摘要', '经办人', '部门'],
+            fill=FILL_HDR2, font=F_HDR2)
+    L_SRC = [('B', 'A'), ('E', 'B'), ('F', 'C'), ('G', 'D'), (amt_c, 'E'), ('U' if is_ar else 'T', 'F')]
+    R_SRC = [('B', 'H'), ('F', 'I'), ('N', 'J'), ('J', 'K'), ('I', 'L'), ('H', 'M')]
+    for i in range(SOA_N):
+        r = 9 + i
+        for src, dst in L_SRC:
+            fmt = DATE if src in ('B', 'U', 'T') else (MONEY if src in ('G', amt_c) else (QTY if src == 'F' else None))
+            put(ws, f'{dst}{r}', f'=IFERROR(INDEX({biz}!${src}${br0}:${src}${br1},'
+                                 f'MATCH(ROW()-8,{biz}!${seq_b}${br0}:${seq_b}${br1},0)),"")',
+                font=F_LINK, fmt=fmt, align=CL if src == 'E' else C)
+        for src, dst in R_SRC:
+            fmt = DATE if src == 'B' else (MONEY if src == 'N' else None)
+            put(ws, f'{dst}{r}', f'=IFERROR(INDEX({CASHQ}!${src}${CASH_R0}:${src}${CASH_R1},'
+                                 f'MATCH(ROW()-8,{CASHQ}!${seq_c}${CASH_R0}:${seq_c}${CASH_R1},0)),"")',
+                font=F_LINK, fmt=fmt, align=CL if src == 'J' else C)
+        ws.row_dimensions[r].height = 16
+    TR = 9 + SOA_N
+    put(ws, f'A{TR}', '小计', font=F_TOT, fill=FILL_TOT)
+    for c in ['B','C','D','F']: put(ws, f'{c}{TR}', None, font=F_TOT, fill=FILL_TOT)
+    put(ws, f'E{TR}', f'=SUM(E9:E{TR-1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+    put(ws, f'H{TR}', '小计', font=F_TOT, fill=FILL_TOT)
+    for c in ['I','K','L','M']: put(ws, f'{c}{TR}', None, font=F_TOT, fill=FILL_TOT)
+    put(ws, f'J{TR}', f'=SUM(J9:J{TR-1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+    put(ws, f'A{TR+2}', f'本对账单根据双方往来记录生成，如有差异请在 30 日内书面提出。'
+                        f'　　制表：＿＿＿＿＿　　日期：＿＿＿＿＿　　对方确认（盖章）：＿＿＿＿＿＿＿＿',
+        font=F_NOTE, align=CL, border=None)
+    ws.merge_cells(f'A{TR+2}:M{TR+2}')
+    put(ws, f'A{TR+3}', f'注：明细最多显示 {SOA_N} 行。超过时请缩短对账期间分次打印。',
+        font=F_NOTE, align=CL, border=None)
+    ws.merge_cells(f'A{TR+3}:M{TR+3}')
+    ws.freeze_panes = 'A9'; page(ws, titles='7:8')
+build_soa(SH_SOA1, True)
+build_soa(SH_SOA2, False)
+print('  ✓ 客户对账单 / 供应商对账单')
+
+# ============================================================ 统一修饰
+TABCOLOR = {
+    SH_HOME: '1F3864', SH_HELP: '1F3864',
+    SH_PARAM: '7F7F7F', SH_BASE: '7F7F7F', SH_OPEN: '7F7F7F',
+    SH_CASH: 'ED7D31', SH_SAL: 'ED7D31', SH_BUY: 'ED7D31', SH_OTH: 'ED7D31',
+    SH_TB: '548235', SH_ACA: '548235', SH_PL: '548235', SH_BS: '548235', SH_CF: '548235',
+    SH_BAL: '2F5597', SH_INV: '2F5597', SH_AR: '2F5597', SH_AP: '2F5597',
+    SH_FA: '2F5597', SH_PAYROLL: '2F5597', SH_AUX2: '2F5597',
+    SH_SOA1: '2F5597', SH_SOA2: '2F5597', SH_ANA: '2F5597',
+    SH_CHK: 'C00000',
+}
+for name, color in TABCOLOR.items():
+    wb[name].sheet_properties.tabColor = color
+
+for name, last, r0, r1 in [(SH_CASH, 'W', CASH_R0, CASH_R1), (SH_SAL, 'AE', SAL_R0, SAL_R1),
+                           (SH_BUY, 'AA', BUY_R0, BUY_R1), (SH_OTH, 'N', OTH_R0, OTH_R1),
+                           (SH_TB, 'P', ACC_R0, ACC_R1), (SH_INV, 'P', GDS_R0, GDS_R1),
+                           (SH_AR, 'N', CUS_R0, CUS_R1), (SH_AP, 'N', SUP_R0, SUP_R1),
+                           (SH_FA, 'N', FA_R0, FA_R1)]:
+    hr = 4 if name in (SH_CASH, SH_SAL, SH_BUY, SH_OTH) else 5
+    wb[name].auto_filter.ref = f'A{hr}:{last}{r1}'
+
+for name in [SH_PARAM, SH_BASE, SH_OPEN, SH_CASH, SH_SAL, SH_BUY, SH_OTH, SH_FA, SH_PAYROLL]:
+    ws2 = wb[name]
+    r = (ws2.max_row + 2)
+    put(ws2, f'A{r}', '颜色约定：淡黄色＝手工录入　｜　白色 / 灰色＝公式自动计算，请勿覆盖　｜　'
+                      '绿色字＝引用其他工作表，改动会连锁出错。整行删除会破坏结构，清空请选中后按 Delete。',
+        font=F_NOTE, align=CL, border=None)
+print('  ✓ 标签配色 / 自动筛选 / 颜色图例')
+ORDER = [SH_HOME, SH_HELP, SH_PARAM, SH_BASE, SH_OPEN,
+         SH_CASH, SH_SAL, SH_BUY, SH_OTH,
+         SH_TB, SH_ACA, SH_PL, SH_BS, SH_CF,
+         SH_BAL, SH_INV, SH_AR, SH_AP, SH_FA, SH_PAYROLL,
+         SH_AUX2, SH_SOA1, SH_SOA2, SH_ANA, SH_CHK]
 wb._sheets = [wb[n] for n in ORDER]
 wb.active = 0
 OUT = '/home/user/temp/内账财务管理系统/内账财务管理系统_通用版.xlsx'
