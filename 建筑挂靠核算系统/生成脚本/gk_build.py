@@ -107,15 +107,26 @@ widths(ws, {'A':11,'B':46,'C':12,'D':13,'E':11,'F':13,'G':11,'H':12,'I':12,'J':9
 headers(ws, 5, 1, ['项目编号','项目全称','业主','一级单位','一级\n费率','二级单位','二级\n费率',
                    '我方主体','开工日期','状态','合同额','备注'])
 PROJ_ROWS = []
+OWN = ('民能', '铜梁供电')
 seen = {}
+amt1, amt2 = {}, {}
 for e in EV:
     p = e['proj']
-    if p and p not in seen:
-        seen[p] = {'units': [], 'owner': ''}
-    if p:
-        if e['unit'] not in seen[p]['units']: seen[p]['units'].append(e['unit'])
-        if e['kind'] == '销项开票' and e['payee'] in ('民能', '铜梁供电'):
+    if not p: continue
+    seen.setdefault(p, {'units': [], 'owner': '', 'L1': {}, 'L2': {}})
+    if e['unit'] not in seen[p]['units']: seen[p]['units'].append(e['unit'])
+    if e['kind'] == '销项开票' and e.get('count_in', '是') == '是':
+        if e['payee'] in OWN:
             seen[p]['owner'] = e['payee']
+            seen[p]['L1'][e['payer']] = seen[p]['L1'].get(e['payer'], 0) + e['amt']
+        elif e['payer'] not in ('泓普', '仟茂'):
+            seen[p]['L2'][(e['payer'], e['payee'])] = seen[p]['L2'].get((e['payer'], e['payee']), 0) + e['amt']
+for p, info in seen.items():
+    l1 = max(info['L1'], key=info['L1'].get) if info['L1'] else (info['units'][0] if info['units'] else '')
+    l2 = ''
+    cand = [(k, v) for k, v in info['L2'].items() if k[1] == l1]
+    if cand: l2 = max(cand, key=lambda x: x[1])[0][0]
+    info['lv1'], info['lv2'] = l1, l2
 NEW_ROW = ('', '（新项目：请填项目全称）', '民能', '', '', '', '', '泓普', '本次新增项目')
 hist = [(p, info) for p, info in seen.items()]
 ordered = hist[:58] + [(None, None)] + hist[58:]     # 新项目插在第 59 位 → 编号 A059
@@ -127,8 +138,10 @@ for i, (p, info) in enumerate(ordered):
         NEW_CODE = code
         continue
     PCODE[p] = code
-    PROJ_ROWS.append((code, p, info['owner'] or '民能', info['units'][0] if info['units'] else '',
-                      '', info['units'][1] if len(info['units']) > 1 else '', '', '泓普', '在建', ''))
+    multi = len(info['L1']) > 1
+    PROJ_ROWS.append((code, p, info['owner'] or '民能', info['lv1'], '', info['lv2'], '', '泓普', '在建',
+                      ('该项目走了 ' + str(len(info['L1'])) + ' 条挂靠链：' + '、'.join(info['L1'].keys()) +
+                       '，档案只能填一条，链条核算以此为准；其余链条请看单位项目明细') if multi else ''))
 for i in range(P1 - P0 + 1):
     r = P0 + i
     for c in 'ABCDEFGHIJKL':
@@ -160,6 +173,9 @@ headers(ws, 4, 1, ['序号','日期','项目编号','业务类型','开票/\n付
 headers(ws, 4, 13, ['项目全称','层级','管理费','应开成本票','上游\n税率','我方\n税率',
                     '预提增值税','预提附加税','预提印花税','预提所得税','预提税费合计'],
         fill=FILL_AUTO, font=F_HDR2)
+put(ws, 'Y4', '来源表', font=F_HDR2, fill=FILL_AUTO)
+put(ws, 'Z4', '计入汇总', font=F_HDR2, fill=FILL_HDR2)
+ws.column_dimensions['Y'].width = 13; ws.column_dimensions['Z'].width = 10
 U_D = f'{QU}!$D${U0}:$D${U1}'; U_E = f'{QU}!$E${U0}:$E${U1}'; U_F = f'{QU}!$F${U0}:$F${U1}'
 U_G = f'{QU}!$G${U0}:$G${U1}'; U_H = f'{QU}!$H${U0}:$H${U1}'; U_J = f'{QU}!$J${U0}:$J${U1}'
 U_K = f'{QU}!$K${U0}:$K${U1}'; U_L = f'{QU}!$L${U0}:$L${U1}'
@@ -206,7 +222,7 @@ for r in range(F0, F1 + 1):
         f'IF($F{r}="","未选收票/收款方",'
         f'IF(ISNA(MATCH($F{r},{U_NAME},0)),"收款方不在单位档案",'
         f'IF(NOT(ISNUMBER($H{r})),"金额须为数字",'
-        f'IF(AND($D{r}="销项开票",$N{r}="—"),"开票方不在该项目链条上","√")))))))))))',
+        f'IF(AND($D{r}="销项开票",$N{r}="—"),"链条待确认","√")))))))))))',
         font=F_TXT, fill=FILL_CHK)
     ws.row_dimensions[r].height = 16
 # ---- 导入历史事件 ----
@@ -223,10 +239,21 @@ for i, e in enumerate(EV):
     ws[f'G{r}'] = e.get('inv', '')
     ws[f'H{r}'] = e['amt']
     ws[f'J{r}'] = e['memo'][:120]
-    ws[f'K{r}'] = '历史导入 ' + e['src']
+    ws[f'K{r}'] = '历史导入'
+    ws[f'Y{r}'] = e['src'].split('!')[0].strip()
+    ws[f'Z{r}'] = e.get('count_in', '是')
+    if e.get('count_in') == '否':
+        ws[f'K{r}'] = '与 ' + str(e.get('dup_of', '')) + ' 为同一张票，只计一次'
     if e['kind'] == '销项开票' and e.get('mfee') and e['amt']:
         ws[f'I{r}'] = round(e['mfee'] / e['amt'], 6)
     imported += 1
+for rr in range(F0, F1 + 1):
+    put(ws, f'Y{rr}', None, font=F_LINK, fill=FILL_AUTO)
+    if ws[f'Z{rr}'].value is None:
+        put(ws, f'Z{rr}', '是', font=F_IN, fill=FILL_IN)
+    else:
+        put(ws, f'Z{rr}', None, font=F_IN, fill=FILL_IN)
+dv_list(ws, f'Z{F0}:Z{F1}', '"是,否"')
 dv_list(ws, f'C{F0}:C{F1}', f'={P_CODE}')
 dv_list(ws, f'D{F0}:D{F1}', KIND_DV)
 dv_list(ws, f'E{F0}:E{F1}', f'={U_NAME}')
@@ -234,8 +261,11 @@ dv_list(ws, f'F{F0}:F{F1}', f'={U_NAME}')
 dv_list(ws, f'G{F0}:G{F1}', '"13%专票,9%专票,6%专票,3%专票,1%普票,3%普票,13%普票,不开票"')
 dv_num(ws, f'H{F0}:H{F1}', 'greaterThanOrEqual', '-99999999')
 ws.conditional_formatting.add(f'L{F0}:L{F1}',
-    FormulaRule(formula=[f'AND($L{F0}<>"",$L{F0}<>"√")'], fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
-ws.auto_filter.ref = f'A4:W{F1}'
+    FormulaRule(formula=[f'AND($L{F0}<>"",$L{F0}<>"√",$L{F0}<>"链条待确认")'],
+                fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
+ws.conditional_formatting.add(f'L{F0}:L{F1}',
+    FormulaRule(formula=[f'$L{F0}="链条待确认"'], fill=FILL_IN, font=Font(color='9C6500')))
+ws.auto_filter.ref = f'A4:Z{F1}'
 ws.freeze_panes = 'C5'; page(ws, titles='4:4')
 print(f'  ✓ 业务流水（导入历史 {imported} 笔）')
 
@@ -353,12 +383,15 @@ KD=f'{QF}!$D${F0}:$D${F1}'; KC=f'{QF}!$C${F0}:$C${F1}'
 def SS(val, side, kind, extra=''):
     key = KE if side == 'E' else KF
     return f'SUMIFS({val},{key},{{u}},{KD},"{kind}"{extra})'
+KZ = f'{QF}!$Z${F0}:$Z${F1}'
 def agg(val, side, kind, uref, pref=None):
     key = KE if side == 'E' else KF
     ex = f',{KC},{pref}' if pref else ''
-    return f'SUMIFS({val},{key},{uref},{KD},"{kind}"{ex})'
+    return f'SUMIFS({val},{key},{uref},{KD},"{kind}"{ex},{KZ},"是")'
+def agg2(val, side, kinds, uref, pref=None):
+    return '+'.join(agg(val, side, k, uref, pref) for k in kinds)
 
-COLS_U = ['销项开票额','应扣管理费','应开成本票','已开成本票','剩余应开\n成本票','应提税费','已交税','欠税未交',
+COLS_U = ['开票额\n(该单位开出)','应扣管理费','应到成本票','已收成本票','还差成本票','应提税费','已交税','欠税未交',
           '业主已付给\n挂靠单位','业主未付','挂靠单位\n已转我方','挂靠单位\n代收未转','管理费\n已结算','扣质保金']
 def fill_summary(ws, r, uref, pref=None):
     F_ = lambda v, s, k: agg(v, s, k, uref, pref)
@@ -366,7 +399,8 @@ def fill_summary(ws, r, uref, pref=None):
 def summary_formulas(uref, pref=None):
     g = lambda v, s, k: agg(v, s, k, uref, pref)
     return [
-        g(FA,'E','销项开票'), g(FO,'E','销项开票'), g(FP,'E','销项开票'), g(FA,'F','成本票'),
+        g(FA,'E','销项开票'), g(FO,'E','销项开票'), g(FP,'E','销项开票'),
+        g(FA,'F','成本票') + '+' + g(FA,'F','销项开票'),
         None, g(FW,'E','销项开票'), g(FA,'E','已交税'), None,
         g(FA,'F','挂靠代收'), None, g(FA,'E','我方收款'), None,
         g(FA,'F','管理费结算'), g(FA,'E','扣质保金')]
@@ -486,7 +520,7 @@ for r in range(SP0, SP1 + 1):
     put(ws, f'L{r}', f'=IF(OR($A{r}="",$I{r}=""),0,{agg(FO,"E","销项开票","$I"+str(r),"$A"+str(r))})', font=F_LINK, fmt=MONEY)
     put(ws, f'M{r}', f'=IF($A{r}="","",IF(AND($I{r}<>"",$J{r}>0),$J{r}-$L{r},$H{r}))', font=F_TOT, fmt=MONEY)
     ANY = chr(34) + "*" + chr(34)
-    put(ws, f'N{r}', f'=IF($A{r}="","",{agg(FA,"F","成本票",ANY,"$A"+str(r))})', font=F_LINK, fmt=MONEY)
+    put(ws, f'N{r}', f'=IF($A{r}="","",{agg(FA,"F","成本票",ANY,"$A"+str(r))})', font=F_LINK, fmt=MONEY)  # 我方主体开出的成本票
     put(ws, f'O{r}', f'=IF($A{r}="","",ROUND($M{r}-$N{r},2))', font=F_TOT, fmt=MONEY)
     put(ws, f'P{r}', f'=IF($A{r}="","",IF(ABS($O{r})<1,"✓ 已开齐",IF($O{r}>0,"还差成本票","多开了")))',
         font=F_TXT, fill=FILL_CHK)
@@ -572,36 +606,47 @@ for sh,(u,cs,cc,ct,cr,cm) in _COLS.items():
     ORIG[u]=dict(sale=round(float(g(cs)),2), cost=round(float(g(cc)),2), tax=round(float(g(ct)),2),
                  recv_up=round(float(g(cr)),2), recv_us=round(float(g(cm)),2))
 ws = wb.create_sheet(SH_REC)
-title(ws, '对账核对（历史数据导入校验）', 'I',
+title(ws, '对账核对（历史数据导入校验）', 'G',
       '左边是你原来八张手工对账表的合计行，右边是本系统按导入的每一笔重新算出来的。两边应当完全一致；'
       '不一致的行会标红，说明原表的合计行与明细对不上，需要人工确认哪个对。')
 widths(ws, {'A':13,'B':18,'C':17,'D':17,'E':13,'F':11,'G':17,'H':17,'I':13})
-headers(ws, 5, 1, ['单位','核对项目','原表合计行','本系统重算','差额','状态','原表合计行','本系统重算','差额'])
-ITEMS = [('销项开票额','sale',FA,'E','销项开票'), ('已开成本票','cost',FA,'F','成本票'),
-         ('已交税','tax',FA,'E','已交税'), ('业主付给挂靠单位','recv_up',FA,'F','挂靠代收'),
-         ('挂靠单位转给我方','recv_us',FA,'E','我方收款')]
+widths(ws, {'A':13,'B':20,'C':17,'D':17,'E':13,'F':11,'G':56})
+headers(ws, 5, 1, ['单位','核对项目','原表合计行','本系统重算','差额','状态','说明'])
+NOTE3 = ('康欣与金沁是唯一的三层链条（民能←金沁←康欣←泓普）。原来这两张表把同一张票各记了一次，'
+         '康欣表的「已提供成本票」列还把泓普开给康欣的、康欣开给金沁的、代发工资三种方向混在一列求和。'
+         '本系统一张票只记一次、开票方收票方各自明确，所以这两个单位的合计与原表不同，属于口径修正而非导入错误。')
+ITEMS = [('开票额（该单位开出）','sale','E','销项开票'), ('已收成本票','cost','F','BOTH'),
+         ('已交税','tax','E','已交税'), ('业主付给挂靠单位','recv_up','F','挂靠代收'),
+         ('挂靠单位转给我方','recv_us','E','我方收款')]
 r = 6
 for u, o in ORIG.items():
     first = True
-    for label, key, val, side, kind in ITEMS:
+    for label, key, side, kind in ITEMS:
+        uq = chr(34) + u + chr(34)
         put(ws, f'A{r}', u if first else '', font=F_TOT if first else F_TXT,
             fill=FILL_HDR2 if first else None)
         put(ws, f'B{r}', label, font=F_TXT, align=CL)
         put(ws, f'C{r}', o[key], font=F_IN, fill=FILL_IN, fmt=MONEY)
-        put(ws, f'D{r}', f'={agg(val, side, kind, chr(34)+u+chr(34))}', font=F_LINK, fmt=MONEY)
+        f = (agg(FA, 'F', '成本票', uq) + '+' + agg(FA, 'F', '销项开票', uq)) if kind == 'BOTH' \
+            else agg(FA, side, kind, uq)
+        put(ws, f'D{r}', f'={f}', font=F_LINK, fmt=MONEY)
         put(ws, f'E{r}', f'=ROUND($D{r}-$C{r},2)', font=F_TXT, fmt=MONEY)
-        put(ws, f'F{r}', f'=IF(ABS($E{r})<1,"✓ 一致","✗ 不符")', font=F_TOT, fill=FILL_CHK)
-        for c in 'GHI': put(ws, f'{c}{r}', None)
-        ws.row_dimensions[r].height = 16
+        if u in ('康欣', '金沁') and key in ('sale', 'cost'):
+            put(ws, f'F{r}', '△ 口径差异', font=F_TOT, fill=FILL_TOT)
+            put(ws, f'G{r}', NOTE3 if first or key == 'cost' else '', font=F_NOTE, align=CL)
+        else:
+            put(ws, f'F{r}', f'=IF(ABS($E{r})<1,"✓ 一致","✗ 不符")', font=F_TOT, fill=FILL_CHK)
+            put(ws, f'G{r}', None, font=F_NOTE, align=CL)
+        ws.row_dimensions[r].height = 16 if not (u in ('康欣','金沁') and key=='cost') else 46
         first = False
         r += 1
 LAST = r - 1
 put(ws, f'A{r+1}', '总体结论', font=F_TOT, fill=FILL_TOT); put(ws, f'B{r+1}', None, font=F_TOT, fill=FILL_TOT)
-put(ws, f'C{r+1}', f'=COUNTIF($F$6:$F${LAST},"✓*")&" / {LAST-5} 项一致"', font=F_TOT, fill=FILL_TOT)
-put(ws, f'D{r+1}', f'=IF(COUNTIF($F$6:$F${LAST},"✗*")=0,"✓ 历史数据导入完全正确","✗ 有 "&COUNTIF($F$6:$F${LAST},"✗*")&" 项不符")',
+put(ws, f'C{r+1}', f'=COUNTIF($F$6:$F${LAST},"✓*")&" 项一致，"&COUNTIF($F$6:$F${LAST},"△*")&" 项口径差异"', font=F_TOT, fill=FILL_TOT)
+put(ws, f'D{r+1}', f'=IF(COUNTIF($F$6:$F${LAST},"✗*")=0,"✓ 历史数据导入无误（口径差异项见右侧说明）","✗ 有 "&COUNTIF($F$6:$F${LAST},"✗*")&" 项需人工确认")',
     font=F_TOT, fill=FILL_CHK)
-ws.merge_cells(f'D{r+1}:F{r+1}')
-for c in 'EF': put(ws, f'{c}{r+1}', None, font=F_TOT, fill=FILL_CHK)
+ws.merge_cells(f'D{r+1}:G{r+1}')
+for c in 'EFG': put(ws, f'{c}{r+1}', None, font=F_TOT, fill=FILL_CHK)
 REC_SUM_R = r + 1
 ws.conditional_formatting.add(f'F6:F{LAST}',
     FormulaRule(formula=['LEFT($F6,1)="✗"'], fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
@@ -655,8 +700,12 @@ for i, (lab, f, color) in enumerate(CARDS2):
 SR = row + 9
 for i, (lab, f) in enumerate([
     ('历史数据对账', f'={QREC}!$D${REC_SUM_R}'),
-    ('业务流水校验', f'=IF(COUNTIF({QF}!$L${F0}:$L${F1},"√")=COUNT({QF}!$B${F0}:$B${F1}),"✓ 全部通过",'
-                    f'"✗ 有 "&(COUNT({QF}!$B${F0}:$B${F1})-COUNTIF({QF}!$L${F0}:$L${F1},"√"))&" 行待修正")'),
+    ('业务流水校验', f'=IF(COUNT({QF}!$B${F0}:$B${F1})-COUNTIF({QF}!$L${F0}:$L${F1},"√")'
+                    f'-COUNTIF({QF}!$L${F0}:$L${F1},"链条待确认")=0,'
+                    f'"✓ 全部通过"&IF(COUNTIF({QF}!$L${F0}:$L${F1},"链条待确认")>0,'
+                    f'"（另有 "&COUNTIF({QF}!$L${F0}:$L${F1},"链条待确认")&" 行是多链条项目，仅提示不影响汇总）",""),'
+                    f'"✗ 有 "&(COUNT({QF}!$B${F0}:$B${F1})-COUNTIF({QF}!$L${F0}:$L${F1},"√")'
+                    f'-COUNTIF({QF}!$L${F0}:$L${F1},"链条待确认"))&" 行待修正")'),
     ('日记账校验',   f'=IF(COUNTIF({QJ}!$N${J0}:$N${J1},"√")=COUNT({QJ}!$B${J0}:$B${J1}),"✓ 全部通过",'
                     f'"✗ 有 "&(COUNT({QJ}!$B${J0}:$B${J1})-COUNTIF({QJ}!$N${J0}:$N${J1},"√"))&" 行待修正")'),
     ('成本票缺口',   f'=IF({QSU}!$G${SU_T}<1,"✓ 已开齐","还有 "&TEXT({QSU}!$G${SU_T},"#,##0")&" 元成本票没开")'),
