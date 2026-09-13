@@ -9,6 +9,7 @@ D2 = json.load(open(os.path.join(HERE, 'ev2.json')))
 EV = [e for e in D2['events'] if e['kind'] != '预提税费']
 EV.sort(key=lambda e: (e['date'], e['src']))
 PASS_ROWS, DED_ROWS, WAGE_ROWS = D2['pass_rows'], D2['ded_rows'], D2.get('wage', [])
+PARTNER = set(D2['partner'])
 JOUR = json.load(open(os.path.join(HERE, 'jour.json')))
 R2 = lambda x: round(x + 0.0, 2)
 
@@ -65,7 +66,40 @@ sale = [x for x in rows if x['kind'] == '销项开票']
 recv = {(x['proj'], x['payee']) for x in sale}
 LAST = lambda x: x['kind'] == '销项开票' and (x['proj'], x['payer']) not in recv
 
+OWNER = {'民能', '铜梁供电'}
+PCODE_J = {}          # 日记账「项目」→ 项目编号 的映射，目前为空（原表填的不是项目编号）
+NOT_COST = {'税费', '管理费', '借款', '还借款', '转备用金', '其他应付支付', '其他应收收回'}
+TOPS = lambda x: x['kind'] == '销项开票' and x['payee'] in OWNER and x['proj']
+PN = lambda x: x['proj'] in PARTNER          # 合伙项目
+def profit(sel):
+    inc = R2(sum(x['amt'] for x in rows if TOPS(x) and sel(x)))
+    fee = R2(sum(x['mfee'] for x in rows if x['kind'] == '销项开票' and x['proj'] and sel(x)))
+    tax = R2(sum(x['v'] + x['a'] + x['st'] + x['ic'] for x in rows
+                 if x['kind'] == '销项开票' and x['proj'] and sel(x)))
+    reb = R2(sum(x['reb'] for x in rows if x['kind'] == '销项开票' and x['proj'] and sel(x)))
+    gross = R2(inc - fee - tax + reb)
+    # 导入时日记账的项目编号列留空（原表那一列是工地/部门标注），所以按项目算的实际支出应当是 0
+    spend = R2(sum(j['exp'] for j in JOUR
+                   if PCODE_J.get(j.get('proj', '')) and j['etype'] not in NOT_COST))
+    duep = R2(sum(x['amt'] for x in rows if x['kind'] == '其他应付发生' and x['proj'] and sel(x))
+              - sum(x['amt'] for x in rows if x['kind'] == '其他应付扣税' and x['proj'] and sel(x)))
+    return dict(inc=inc, fee=fee, tax=tax, reb=reb, gross=gross, spend=spend, duep=duep,
+                mine=R2(gross - spend - duep))
+PA, PS, PP = profit(lambda x: True), profit(lambda x: not PN(x)), profit(PN)
+
 CASES = [
+ ('项目利润 合计·业主端开票额', '项目利润', 'G6', PA['inc']),
+ ('项目利润 合计·各层管理费',   '项目利润', 'H6', PA['fee']),
+ ('项目利润 合计·应提税费',     '项目利润', 'I6', PA['tax']),
+ ('项目利润 合计·返现',         '项目利润', 'J6', PA['reb']),
+ ('项目利润 合计·票面毛利',     '项目利润', 'K6', PA['gross']),
+ ('项目利润 合计·项目实际支出', '项目利润', 'M6', PA['spend']),
+ ('项目利润 合计·应转合伙方',   '项目利润', 'O6', PA['duep']),
+ ('项目利润 合计·归属我方',     '项目利润', 'P6', PA['mine']),
+ ('项目利润 自营小计·开票额',   '项目利润', 'G7', PS['inc']),
+ ('项目利润 自营小计·归属我方', '项目利润', 'P7', PS['mine']),
+ ('项目利润 合伙小计·开票额',   '项目利润', 'G8', PP['inc']),
+ ('项目利润 合伙小计·归属我方', '项目利润', 'P8', PP['mine']),
  ('单位汇总 合计·开票额',      '单位汇总', 'C6', S(lambda x: x['kind']=='销项开票' and hold(x['payer']))),
  ('单位汇总 合计·应扣管理费',  '单位汇总', 'D6', SF('mfee', lambda x: x['kind']=='销项开票' and hold(x['payer']))),
  ('单位汇总 合计·应到成本票',  '单位汇总', 'E6', SF('due',  lambda x: x['kind']=='销项开票' and hold(x['payer']))),
@@ -118,5 +152,14 @@ for u in HOLD:
     a, b = sub['C6'].value or 0, usum.cell(u2row[u], 3).value or 0
     if abs(a - b) < 0.05: ok += 1; print(f'  ✓ {u}明细 开票额合计 = 单位汇总 {u} 行  {a:,.2f}')
     else: bad += 1; print(f'  ✗ {u}明细 {a} ≠ 单位汇总 {b}')
+# 自营 + 合伙 必须等于全部
+w = openpyxl.load_workbook(XL, data_only=True) if False else wb
+for col in ('G', 'K', 'P'):
+    a3, b3, c3 = (w['项目利润'][f'{col}6'].value or 0, w['项目利润'][f'{col}7'].value or 0,
+                  w['项目利润'][f'{col}8'].value or 0)
+    if abs(a3 - b3 - c3) < 0.05:
+        ok += 1; print(f'  ✓ 项目利润 {col} 列：自营 + 合伙 = 全部  {a3:,.2f}')
+    else:
+        bad += 1; print(f'  ✗ 项目利润 {col} 列：全部 {a3} ≠ 自营 {b3} + 合伙 {c3}')
 print(f'\n{ok}/{ok+bad} 项一致' + ('' if bad == 0 else f'，{bad} 项不符'))
 sys.exit(1 if bad else 0)

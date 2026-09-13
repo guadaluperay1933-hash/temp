@@ -10,6 +10,8 @@ RECALC = '/mnt/skills/public/xlsx/scripts/recalc.py'
 D2 = json.load(open(os.path.join(HERE, 'ev2.json')))
 EV = [e for e in D2['events'] if e['kind'] != '预提税费']
 PASS_ROWS, DED_ROWS, WAGE_ROWS = D2['pass_rows'], D2['ded_rows'], D2.get('wage', [])
+PARTNER = set(D2['partner'])
+OWNER = {'民能', '铜梁供电'}
 JOUR = json.load(open(os.path.join(HERE, 'jour.json')))
 R2 = lambda x: round(x + 0.0, 2)
 MFEE_RATE = {}
@@ -28,6 +30,7 @@ for e in EV:
     if e.get('count_in', '是') != '是': continue
     amt = float(e['amt']); kind = KMAP.get(e['kind'], e['kind'])
     mfee = R2(amt * MFEE_RATE.get((e['payer'], round(amt, 2)), 0.0)) if kind == '销项开票' else 0.0
+    p0 = UP.get(e['payer'], {}) if False else None
     FLOW.append(dict(d=e['date'], kind=kind, payer=e['payer'], payee=e['payee'], proj=e['proj'],
                      amt=amt, mfee=mfee, due=R2(amt - mfee) if kind == '销项开票' else 0.0,
                      reb=R2(e.get('rebate', 0) or 0), itype=e.get('itype', '')))
@@ -52,8 +55,8 @@ SCEN = [
  ('④2026-06 单月',      '单位汇总', ('D3', 'F3'), (dt.date(2026,6,1), dt.date(2026,6,30)), ('2026-06-01', '2026-06-30')),
  ('⑤2026上半年',        '单位汇总', ('D3', 'F3'), (dt.date(2026,1,1), dt.date(2026,6,30)), ('2026-01-01', '2026-06-30')),
 ]
-SHEETS_YEAR = ['单位汇总', '项目汇总', '链条核算', '发票缺口', '往来台账', '税费台账', '代收台账', '费用统计',
-               '单位项目明细']
+SHEETS_YEAR = ['单位汇总', '项目汇总', '项目利润', '链条核算', '发票缺口', '往来台账', '税费台账',
+               '代收台账', '费用统计', '单位项目明细']
 fails = 0
 for name, sh, cell, val, (lo, hi) in [(s[0], s[1], s[2], s[3], s[4] or (None, None)) for s in SCEN]:
     path = os.path.join(TMP, f'sc_{abs(hash(name))%10000}.xlsx')
@@ -97,6 +100,14 @@ for name, sh, cell, val, (lo, hi) in [(s[0], s[1], s[2], s[3], s[4] or (None, No
       ('代收台账','H6'): S(lambda x: x['kind']=='我方收款'),
       ('费用统计','E6'): R2(sum(j['inc'] for j in J)),
       ('费用统计','F6'): R2(sum(j['exp'] for j in J)),
+      ('项目利润','G6'): S(lambda x: x['kind']=='销项开票' and x['payee'] in OWNER and x['proj']),
+      ('项目利润','G7'): S(lambda x: x['kind']=='销项开票' and x['payee'] in OWNER and x['proj']
+                                     and x['proj'] not in PARTNER),
+      ('项目利润','G8'): S(lambda x: x['kind']=='销项开票' and x['payee'] in OWNER and x['proj']
+                                     and x['proj'] in PARTNER),
+      ('项目利润','H6'): S(lambda x: x['kind']=='销项开票' and x['proj'], 'mfee'),
+      ('项目利润','O6'): R2(S(lambda x: x['kind']=='其他应付发生' and x['proj'])
+                          - S(lambda x: x['kind']=='其他应付扣税' and x['proj'])),
       ('康欣明细','C6'): S(lambda x: x['kind']=='销项开票' and x['payer']=='康欣' and x['proj']),
       ('金沁明细','C6'): S(lambda x: x['kind']=='销项开票' and x['payer']=='金沁' and x['proj']),
     }
