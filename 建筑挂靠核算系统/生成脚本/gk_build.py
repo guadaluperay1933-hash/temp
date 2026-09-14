@@ -431,10 +431,12 @@ for r in range(F0, F1 + 1):
         f'IF({lk(f"$E{r}", U_NAME, U_TYPE)}="挂靠单位",$E{r},'
         f'IF({lk(f"$F{r}", U_NAME, U_TYPE)}="挂靠单位",$F{r},"")))',
         font=F_NOTE, fill=FILL_AUTO)
-    # 取数键：来源表#该表内第几笔 —— 8 张单位竖版明细靠它一行一行取数
+    # 取数键：归属单位#该单位第几笔 —— 8 张单位竖版明细靠它一行一行取数。
+    # 用「归属单位表」而不是「来源表」：来源表只有历史行有值，你新录的行来源表是空的，
+    # 用来源表当键的话新行永远不会出现在单位明细里。
     put(ws, f'{C_["skey"]}{r}',
-        f'=IF(${C_["src"]}{r}="","",${C_["src"]}{r}&"#"&'
-        f'COUNTIF(${C_["src"]}${F0}:${C_["src"]}{r},${C_["src"]}{r}))',
+        f'=IF(${C_["ubel"]}{r}="","",${C_["ubel"]}{r}&"#"&'
+        f'COUNTIF(${C_["ubel"]}${F0}:${C_["ubel"]}{r},${C_["ubel"]}{r}))',
         font=F_NOTE, fill=FILL_AUTO)
     put(ws, f'{C_["chk"]}{r}',
         f'=IF($B{r}="","",'
@@ -892,35 +894,64 @@ ws.freeze_panes = f'C{Q0}'; page(ws, titles=f'{HR}:{HR}')
 print('  ✓ 单位项目明细')
 
 # ============================================================ 8 张单位竖版明细（给领导看）
-# 表头照你那份《对账明细》的两层结构，一笔业务一行，按日期排；
-# 数据源是【业务流水】里「来源表＝这家单位」的行，靠隐藏的「取数键」一行一行取。
+# 表头照你那份《对账明细》的两层结构来：第 5 行是组名（开票情况 / 交税情况 / 回款情况 …），
+# 第 6 行才是具体列名；一笔业务一行，按日期排。用不上的列组按单位隐藏，
+# 每家打开就是它自己那张表的样子。
 SRC_SHEET = {u: u for u in ('德誉嘉', '迅驰', '华城', '金沁', '湖南锦泰', '康欣', '安锐', '杰华')}
 SRC_XLS = {'德誉嘉': '德誉嘉 ', '迅驰': '迅驰', '华城': '华城', '金沁': '金沁',
            '湖南锦泰': '湖南锦泰', '康欣': '康欣', '安锐': '安锐', '杰华': '杰华电气'}
-VD_0 = 7                       # 明细首行
-VD_N = 250                     # 每张单位表留 250 行
+VD_HG, VD_HC = 5, 6            # 两层表头：组名行 / 列名行
+VD_TOT = 7                     # 期间合计行（跟原表第 4 行同位置）
+VD_0 = 8                       # 明细首行
+VD_N = 400
 VD_1 = VD_0 + VD_N - 1
-VD_TOT = 6                     # 合计行（表头正下方）
+# (列, 宽, 组名, 列名, 类型)
 VCOLS = [
-    ('A', 7,  '序号', ''),            ('B', 11, '日 期', ''),
-    ('C', 20, '项目简称', ''),        ('D', 40, '摘　　要', ''),
-    ('E', 10, '业务\n性质', ''),
-    ('F', 10, '发票\n性质', '开票情况'), ('G', 10, '收票\n单位', '开票情况'),
-    ('H', 14, '销售开票金额', '开票情况'), ('I', 13, '应扣管理费', '开票情况'),
-    ('J', 13, '应到成本票', '开票情况'), ('K', 13, '已到成本票', '开票情况'),
-    ('L', 13, '剩余开票金额', '开票情况'),
-    ('M', 12, '预收增值部', '交税情况'), ('N', 12, '预收附加税', '交税情况'),
-    ('O', 12, '预收印花税', '交税情况'), ('P', 12, '预收所得税', '交税情况'),
-    ('Q', 12, '应扣税费', '交税情况'), ('R', 12, '已交税', '交税情况'),
-    ('S', 14, '业主付给\n挂靠单位', '回款情况'), ('T', 14, '挂靠单位\n转我方', '回款情况'),
-    ('U', 13, '管理费结算', '回款情况'), ('V', 12, '扣质保金', '回款情况'),
-    ('W', 22, '备　注', ''), ('X', 9, '在期间内', ''),
+    ('A', 6,  '', '序号', 'no'),        ('B', 11, '', '日 期', 'date'),
+    ('C', 20, '', '项目简称', 'sname'), ('D', 40, '', '摘　　要', 'memo'),
+    ('E', 10, '', '业务\n性质', 'ptype'),
+    ('F', 10, '开票情况', '发票\n性质', 'inv'),
+    ('G', 10, '开票情况', '收票\n单位', 'payee'),
+    ('H', 14, '开票情况', '销售开票金额', 'sale'),
+    ('I', 13, '开票情况', '应扣管理费', 'mfee'),
+    ('J', 13, '开票情况', '应到成本票', 'due'),
+    ('K', 13, '开票情况', '已到成本票', 'done'),
+    ('L', 12, '开票情况', '代发工资', 'wage'),
+    ('M', 13, '开票情况', '剩余开票金额', 'rest'),
+    ('N', 12, '交税情况', '预收增值部', 'vat'),
+    ('O', 12, '交税情况', '预收附加税', 'add'),
+    ('P', 12, '交税情况', '预收印花税', 'stamp'),
+    ('Q', 12, '交税情况', '预收所得税', 'inc'),
+    ('R', 12, '交税情况', '应扣税费', 'taxsum'),
+    ('S', 12, '交税情况', '已交税', 'paid'),
+    ('T', 12, '交税情况', '欠税未交', 'owed'),
+    ('U', 14, '回款情况', '业主付给\n挂靠单位', 'up'),
+    ('V', 14, '回款情况', '挂靠单位\n转我方', 'us'),
+    ('W', 13, '回款情况', '管理费结算', 'mset'),
+    ('X', 12, '回款情况', '扣质保金', 'bond'),
+    ('Y', 12, '返管理费', '返管理费', 'reb'),
+    ('Z', 12, '返管理费', '已收款', 'rebgot'),
+    ('AA', 12, '返管理费', '未收款', 'rebleft'),
+    ('AB', 13, '过账/合伙应付款', '应付款', 'ap'),
+    ('AC', 12, '过账/合伙应付款', '已付款', 'appaid'),
+    ('AD', 12, '过账/合伙应付款', '未付款', 'apleft'),
+    ('AE', 22, '', '备　注', 'note'), ('AF', 9, '', '在期间内', 'inrange'),
+    ('AG', 7, '', '行指针', 'ptr'),
 ]
-VD_LAST = 'X'
-VD_MONEY = list('HIJKLMNOPQRSTUV')
+VD_LAST = 'AG'
+VD_MONEY = [c for c, _, _, _, k in VCOLS
+            if k in ('sale', 'mfee', 'due', 'done', 'wage', 'rest', 'vat', 'add', 'stamp',
+                     'inc', 'taxsum', 'paid', 'owed', 'up', 'us', 'mset', 'bond',
+                     'reb', 'rebgot', 'rebleft', 'ap', 'appaid', 'apleft')]
+VD_RUN = {'rest': ('J', 'K'), 'owed': ('R', 'S'), 'rebleft': ('Y', 'Z'), 'apleft': ('AB', 'AC')}
+GROUP_COLS = {}
+for c, _, g, _, _ in VCOLS:
+    if g: GROUP_COLS.setdefault(g, []).append(c)
 
-def vfetch(key_cell, col_key):
-    return f'IFERROR(INDEX({FRNG(col_key)},MATCH({key_cell},{FRNG("skey")},0)),"")'
+# 每行只定位一次（隐藏的 AG「行指针」），其余 30 列一律 INDEX(区间, 指针)，
+# 不再每格算一次 MATCH —— 8 张表 × 400 行 × 30 列如果各算一次 MATCH，打开表会很慢
+def vfetch(ptr, col_key):
+    return f'IF({ptr}="","",INDEX({FRNG(col_key)},{ptr}))'
 
 SUB_SHEETS = []
 for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
@@ -928,10 +959,12 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
     nm = f'{u}明细'
     ws = wb.create_sheet(nm)
     title(ws, f'{u} · 对账明细（给领导看的逐笔明细）', VD_LAST,
-          f'表头照你那份《对账明细》的「{u}」表来，原来横着排的一笔一笔改成竖着排，按日期顺序。'
-          '明细全部显示不折叠；上面填年度或起止日期，第 6 行的合计只统计落在期间内的行（最后一列会标是/否）。'
-          '数据全部来自【业务流水】里来源表＝本单位的行，在那边改一笔，这里立刻跟着变。')
-    widths(ws, {c: w for c, w, _, _ in VCOLS})
+          f'表头照你那份《对账明细》的「{SRC_XLS[u].strip()}」表来：第 5 行是组名、第 6 行是列名，'
+          '原来横着排的一笔一笔改成竖着排，按日期顺序。明细全部显示不折叠；'
+          '上面填年度或起止日期，第 7 行的合计只统计落在期间内的行（最后一列标是/否，'
+          '不在期间内的行是灰的）。数据全部来自【业务流水】里归属到本单位的行，'
+          '在那边改一笔，这里立刻跟着变 —— 包括你以后新录的。')
+    widths(ws, {c: w for c, w, _, _, _ in VCOLS})
     # 筛选带
     put(ws, 'A3', '本表单位', font=F_H2, fill=FILL_HDR2)
     put(ws, 'B3', u, font=Font(name='微软雅黑', size=11, bold=True, color='1F3864'),
@@ -952,20 +985,29 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
     put(ws, 'B4', '=IF($H$3<>"",$H$3,IF($D$3<>"",DATE($D$3,12,31),DATE(2199,12,31)))', font=F_NOTE, fmt=DATE)
     ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].hidden = True
-    # 两层表头（第 5 行分组、第 5/6 合并给单列，明细列名在第 5 行下一行）
-    HR1, HR2 = 5, 5      # 单层表头即可，分组名放在第 5 行上方的第 4 行会被隐藏，故并入列名
-    for c, w, nmc, grp in VCOLS:
-        put(ws, f'{c}{HR2}', (grp + '\n' + nmc) if grp else nmc,
-            font=F_HDR2, fill=FILL_HDR2 if grp else FILL_AUTO, align=C)
-    ws.row_dimensions[HR2].height = 34
-    key = lambda r: f'$B$3&"#"&$A{r}'
+    # 两层表头
+    for c, _, g, nmc, _ in VCOLS:
+        put(ws, f'{c}{VD_HC}', nmc, font=F_HDR2, fill=FILL_HDR2, align=C)
+        if not g:
+            put(ws, f'{c}{VD_HG}', nmc, font=F_HDR2, fill=FILL_HDR2, align=C)
+            ws.merge_cells(f'{c}{VD_HG}:{c}{VD_HC}')
+        else:
+            put(ws, f'{c}{VD_HG}', None, font=F_HDR2, fill=FILL_HDR2, align=C)
+    for g, cols in GROUP_COLS.items():
+        put(ws, f'{cols[0]}{VD_HG}', g, font=F_HDR2, fill=FILL_HDR2, align=C)
+        if len(cols) > 1: ws.merge_cells(f'{cols[0]}{VD_HG}:{cols[-1]}{VD_HG}')
+    ws.row_dimensions[VD_HG].height = 20
+    ws.row_dimensions[VD_HC].height = 30
     for i in range(VD_N):
         r = VD_0 + i
         n = i + 1
-        put(ws, f'A{r}', str(n), font=F_NOTE)
         ws[f'A{r}'] = n
-        k = f'"{sh}#"&$A{r}'
-        get = lambda ck: vfetch(k, ck)
+        put(ws, f'A{r}', None, font=F_NOTE)
+        put(ws, f'AG{r}', f'=IFERROR(MATCH("{sh}#"&$A{r},{FRNG("skey")},0),"")',
+            font=F_NOTE, border=None)
+        ptr = f'$AG{r}'
+        get = lambda ck: vfetch(ptr, ck)
+        kd = get('kind'); am = f'N({get("amt")})'; oc = get('ocol')
         put(ws, f'B{r}', f'=IF({get("date")}="","",{get("date")})', font=F_LINK, fmt=DATE)
         put(ws, f'C{r}', f'=T({get("sname")})', font=F_LINK, align=CL)
         put(ws, f'D{r}', f'=T({get("memo")})', font=F_LINK, align=CL)
@@ -973,58 +1015,82 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
                          f'MATCH({get("proj")},{P_CODE},0)),""))', font=F_TXT)
         put(ws, f'F{r}', f'=T({get("inv")})', font=F_LINK)
         put(ws, f'G{r}', f'=T({get("payee")})', font=F_LINK)
-        kd = get('kind'); am = f'N({get("amt")})'
-        oc = get('ocol')
-        put(ws, f'H{r}', f'=IF(AND({kd}="销项开票",{oc}<>"已开成本票"),{am},0)',
-            font=F_LINK, fmt=MONEY)
+        put(ws, f'H{r}', f'=IF(AND({kd}="销项开票",{oc}<>"已开成本票"),{am},0)', font=F_LINK, fmt=MONEY)
         put(ws, f'I{r}', f'=N({get("mfee")})', font=F_LINK, fmt=MONEY)
         put(ws, f'J{r}', f'=N({get("due")})', font=F_LINK, fmt=MONEY)
         put(ws, f'K{r}', f'=IF({oc}="已开成本票",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'L{r}', f'=IF($B{r}="","",ROUND(SUM($J${VD_0}:$J{r})-SUM($K${VD_0}:$K{r}),2))',
-            font=F_TXT, fmt=MONEY)
-        for col, ck in (('M', 'vat'), ('N', 'add'), ('O', 'stamp'), ('P', 'inc')):
+        put(ws, f'L{r}', f'=IF({kd}="工资扣抵",{am},0)', font=F_LINK, fmt=MONEY)
+        for col, ck in (('N', 'vat'), ('O', 'add'), ('P', 'stamp'), ('Q', 'inc')):
             put(ws, f'{col}{r}', f'=N({get(ck)})', font=F_LINK, fmt=MONEY)
-        put(ws, f'Q{r}', f'=N({get("taxsum")})', font=F_TOT, fmt=MONEY)
-        put(ws, f'R{r}', f'=IF({kd}="已交税",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'S{r}', f'=IF({kd}="挂靠代收",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'T{r}', f'=IF({kd}="我方收款",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'U{r}', f'=IF({kd}="管理费结算",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'V{r}', f'=IF({kd}="扣质保金",{am},0)', font=F_LINK, fmt=MONEY)
-        put(ws, f'W{r}', f'=IF($B{r}="","","原表 {SRC_XLS[u].strip()} 表第 "&{vfetch(k,"srow")}&" 行"'
-                         f'&IF({vfetch(k,"cnt")}="否","（与别的表同一张票，汇总只计一次）",""))',
+        put(ws, f'R{r}', f'=N({get("taxsum")})', font=F_TOT, fmt=MONEY)
+        put(ws, f'S{r}', f'=IF({kd}="已交税",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'U{r}', f'=IF({kd}="挂靠代收",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'V{r}', f'=IF({kd}="我方收款",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'W{r}', f'=IF({kd}="管理费结算",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'X{r}', f'=IF({kd}="扣质保金",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'Y{r}', f'=N({get("ar")})', font=F_LINK, fmt=MONEY)
+        put(ws, f'Z{r}', f'=IF({kd}="其他应收收回",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'AB{r}', f'=IF({kd}="其他应付发生",{am},0)', font=F_LINK, fmt=MONEY)
+        put(ws, f'AC{r}', f'=IF(OR({kd}="其他应付支付",{kd}="其他应付扣税"),{am},0)',
+            font=F_LINK, fmt=MONEY)
+        for key, (a, b) in VD_RUN.items():
+            col = [c for c, _, _, _, kk in VCOLS if kk == key][0]
+            put(ws, f'{col}{r}',
+                f'=IF($B{r}="","",ROUND(SUM(${a}${VD_0}:${a}{r})-SUM(${b}${VD_0}:${b}{r}),2))',
+                font=F_TXT, fmt=MONEY)
+        put(ws, f'AE{r}', f'=IF($B{r}="","","原表 {SRC_XLS[u].strip()} 表第 "&{vfetch(ptr,"srow")}&" 行"'
+                          f'&IF({vfetch(ptr,"cnt")}="否","（与别的表同一张票，汇总只计一次）",""))',
             font=F_NOTE, align=CL)
-        put(ws, f'X{r}', f'=IF($B{r}="","",IF(AND($B{r}>=$A$4,$B{r}<=$B$4),"是","否"))',
+        put(ws, f'AF{r}', f'=IF($B{r}="","",IF(AND($B{r}>=$A$4,$B{r}<=$B$4),"是","否"))',
             font=F_TXT, fill=FILL_CHK)
         ws.row_dimensions[r].height = 16
-    # 合计行：只统计落在期间内的行
+    # 合计行：只统计落在期间内的行；余额列直接写差额
     put(ws, f'A{VD_TOT}', '期间合计', font=F_TOT, fill=FILL_TOT)
-    for c in 'BCDEFG':
-        put(ws, f'{c}{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
-    put(ws, f'D{VD_TOT}', f'=COUNTIFS($X${VD_0}:$X${VD_1},"是")&" 笔（本表共 "'
-                          f'&COUNTIF($X${VD_0}:$X${VD_1},"是")+COUNTIF($X${VD_0}:$X${VD_1},"否")&" 笔）"',
-        font=F_TOT, fill=FILL_TOT, align=CL)
+    for c in 'BCEFG': put(ws, f'{c}{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
+    put(ws, f'D{VD_TOT}', f'=COUNTIF($AF${VD_0}:$AF${VD_1},"是")&" 笔（本表共 "'
+                          f'&COUNTIF($AF${VD_0}:$AF${VD_1},"是")+COUNTIF($AF${VD_0}:$AF${VD_1},"否")'
+                          f'&" 笔）"', font=F_TOT, fill=FILL_TOT, align=CL)
+    RUNCOL = {[c for c, _, _, _, kk in VCOLS if kk == key][0]: (a, b)
+              for key, (a, b) in VD_RUN.items()}
     for c in VD_MONEY:
-        if c == 'L':
-            put(ws, f'L{VD_TOT}', f'=ROUND($J${VD_TOT}-$K${VD_TOT},2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-            continue
-        put(ws, f'{c}{VD_TOT}', f'=ROUND(SUMIF($X${VD_0}:$X${VD_1},"是",{c}${VD_0}:{c}${VD_1}),2)',
-            font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-    put(ws, f'W{VD_TOT}', '合计只算「在期间内＝是」的行', font=F_NOTE, fill=FILL_TOT, align=CL)
-    put(ws, f'X{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
+        if c in RUNCOL:
+            a, b = RUNCOL[c]
+            put(ws, f'{c}{VD_TOT}', f'=ROUND(${a}${VD_TOT}-${b}${VD_TOT},2)',
+                font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+        else:
+            put(ws, f'{c}{VD_TOT}',
+                f'=ROUND(SUMIF($AF${VD_0}:$AF${VD_1},"是",{c}${VD_0}:{c}${VD_1}),2)',
+                font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+    put(ws, f'AE{VD_TOT}', '合计只算「在期间内＝是」的行', font=F_NOTE, fill=FILL_TOT, align=CL)
+    put(ws, f'AF{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
+    put(ws, f'AG{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
     ws.row_dimensions[VD_TOT].height = 20
     ws.conditional_formatting.add(f'A{VD_0}:{VD_LAST}{VD_1}',
-        FormulaRule(formula=[f'$X{VD_0}="否"'], font=Font(color='A6A6A6')))
-    # 没数据的行折起来，留 20 行空位
-    nrow = sum(1 for e in EV if SHEET2UNIT.get(e['src'].split('!')[0].strip(),
-                                                    e['src'].split('!')[0].strip()) == sh)
+        FormulaRule(formula=[f'$AF{VD_0}="否"'], font=Font(color='A6A6A6')))
+    # 这家单位用不上的列组直接隐藏，打开就是它自己那张表的样子
+    mine = [e for e in EV if SHEET2UNIT.get(e['src'].split('!')[0].strip(),
+                                            e['src'].split('!')[0].strip()) == sh]
+    has_reb = any(e.get('rebate') for e in mine)
+    has_ap = (u == '迅驰')
+    has_wage = any(e['kind'] == '工资扣抵' for e in EV) and u == '康欣'
+    has_tax = any((e.get('tax_v') or 0) + (e.get('tax_s') or 0) + (e.get('tax_y') or 0)
+                  + (e.get('tax_i') or 0) for e in mine)
+    hide = []
+    if not has_reb: hide += GROUP_COLS['返管理费']
+    if not has_ap: hide += GROUP_COLS['过账/合伙应付款']
+    if not has_wage: hide += ['L']
+    if not has_tax: hide += GROUP_COLS['交税情况']
+    for c in hide: ws.column_dimensions[c].hidden = True
+    ws.column_dimensions['AG'].hidden = True
+    nrow = len(mine)
     for r in range(VD_0 + nrow + 20, VD_1 + 1):
         ws.row_dimensions[r].hidden = True
-    ws.auto_filter.ref = f'A{HR2}:{VD_LAST}{VD_1}'
+    ws.auto_filter.ref = f'A{VD_HC}:AF{VD_1}'
     ws.freeze_panes = f'C{VD_0}'
-    page(ws, titles=f'{HR2}:{HR2}')
-    ws.print_area = f'$A$1:${VD_LAST}${VD_1}'
+    page(ws, titles=f'{VD_HG}:{VD_HC}')
+    ws.print_area = f'$A$1:$AF${VD_1}'
     SUB_SHEETS.append(nm)
-print(f'  ✓ {len(SUB_SHEETS)} 张单位竖版明细：{"、".join(SUB_SHEETS)}')
+print(f'  ✓ {len(SUB_SHEETS)} 张单位竖版明细（两层表头，用不上的列组按单位隐藏）：{"、".join(SUB_SHEETS)}')
 
 # ============================================================ 链条核算
 ws = wb.create_sheet(SH_CHAIN)
@@ -1433,11 +1499,15 @@ DF_ITEMS = [
     ('挂靠单位转我方',   lambda sh: dsum('amt', sh, '我方收款')),
     ('管理费结算',       lambda sh: dsum('amt', sh, '管理费结算')),
     ('扣质保金',         lambda sh: dsum('amt', sh, '扣质保金')),
+    ('代发工资',         lambda sh: dsum('amt', sh, '工资扣抵')),
+    ('返管理费',         lambda sh: dsum('ar', sh, '销项开票')),
+    ('合伙项目应付款',   lambda sh: dsum('amt', sh, '其他应付发生')),
 ]
 # 原表合计行逐列的列号（8 张表各不相同，逐张核对过）
 ORIG_COL = {
  '德誉嘉 ': dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10,
-                业主付给挂靠单位=13, 挂靠单位转我方=17, 管理费结算=16),
+                业主付给挂靠单位=13, 挂靠单位转我方=17, 管理费结算=16,
+                返管理费=19, 合伙项目应付款=22),
  '迅驰':   dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=16, 已交税=17,
                 业主付给挂靠单位=20, 挂靠单位转我方=25, 管理费结算=23, 扣质保金=24),
  '华城':   dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=16, 已交税=17,
@@ -1445,16 +1515,24 @@ ORIG_COL = {
  '金沁':   dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=16, 已交税=17,
                 业主付给挂靠单位=21, 挂靠单位转我方=26, 管理费结算=25, 扣质保金=24),
  '湖南锦泰': dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=17, 已交税=18,
-                业主付给挂靠单位=21, 挂靠单位转我方=26, 管理费结算=24, 扣质保金=25),
+                业主付给挂靠单位=21, 挂靠单位转我方=26, 管理费结算=24, 扣质保金=25, 代发工资=11),
  '康欣':   dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=16, 已交税=17,
                 业主付给挂靠单位=20, 挂靠单位转我方=25, 管理费结算=24, 扣质保金=23),
  '安锐':   dict(销售开票金额=7, 应扣管理费=8, 应到成本票=9, 已到成本票=10, 应扣税费=17, 已交税=18,
-                业主付给挂靠单位=21, 挂靠单位转我方=26, 管理费结算=24, 扣质保金=25),
+                业主付给挂靠单位=21, 挂靠单位转我方=26, 管理费结算=24, 扣质保金=25, 代发工资=11),
  '杰华电气': dict(销售开票金额=7, 应扣管理费=9, 应到成本票=10, 已到成本票=11, 应扣税费=18, 已交税=19,
-                业主付给挂靠单位=22, 挂靠单位转我方=27, 管理费结算=25, 扣质保金=26),
+                业主付给挂靠单位=22, 挂靠单位转我方=27, 管理费结算=25, 扣质保金=26, 代发工资=12),
 }
 import openpyxl as _op
 _ref = _op.load_workbook(os.path.join(HERE, '..', '参考', '原对账明细_9.13.xlsx'), data_only=True)
+
+def _colsum(_ws, col):
+    return round(sum(float(_ws.cell(row=_r, column=col).value)
+                     for _r in range(5, _ws.max_row + 1)
+                     if isinstance(_ws.cell(row=_r, column=col).value, (int, float))), 2)
+# 金沁表有两栏质保金：T 列是民能扣金沁的，X 列是再往下扣到我方这一层的。
+# 系统记的是 X 列那一层，T 列多出来的部分单独列出来说明。
+JQ_BOND_UP = round(_colsum(_ref['金沁'], 20) - _colsum(_ref['金沁'], 24), 2)
 NOTE_OK = '对上了'
 r = DF_H + 1
 DF_0 = r
@@ -1538,6 +1616,12 @@ EXTRA_CHK = [
      f'=SUMIFS({FI},{KD},"其他应付扣税",{KF},"迅驰",{KZ},"是")', '原表迅驰「已付款」列'),
     ('康欣', '工资扣抵（劳务成本）', round(sum(x['amt'] for x in WAGE_ROWS), 2),
      f'=SUMIFS({FI},{KD},"工资扣抵",{KZ},"是")', '原总台账「劳务成本·工资扣抵」列'),
+    ('金沁', '上层质保金（民能扣金沁，尚未下传）', JQ_BOND_UP,
+     '=0',
+     '原表金沁 T 列「金沁回款情况·质保金」合计 2,638.52，其中 521.43 已经在康欣那一层（X 列）'
+     '扣过并且进了系统；剩下的 2,117.09 是民能扣在金沁手上、还没往下传到我方的那部分，'
+     '原表只在金沁自己那一栏出现过一次，没有对应的回款行。系统暂时不入账，'
+     '等确认这笔到底算「金沁欠我方的质保金」还是「业主还没放的质保金」再补录。'),
 ]
 for u, lab, ov, f, note in EXTRA_CHK:
     put(ws, f'A{r2}', u, font=F_TXT)

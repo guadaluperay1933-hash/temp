@@ -136,6 +136,7 @@ for sh, mp in M.items():
         base = dict(date=d.isoformat(), unit=unit, proj=cur_proj, memo=memo, inv=inv, biz=biz,
                     src=f'{sh}!{r}')
         sale = num(ws, r, mp['sale']); cost = num(ws, r, mp['cost_done'])
+        cdue_r = round(num(ws, r, mp['cost_due']), 2)
         mfee = round(num(ws, r, mp['mfee']), 2)
         tv = round(num(ws, r, mp.get('tax_v')), 2); ts = round(num(ws, r, mp.get('tax_s')), 2)
         ty = round(num(ws, r, mp.get('tax_y')), 2); ti = round(num(ws, r, mp.get('tax_i')), 2)
@@ -173,6 +174,17 @@ for sh, mp in M.items():
         if abs(cost) > 0.004 and abs(cost - sale) > 0.004:
             iss = m_iss or '泓普'
             rcv = m_rcv or to or unit
+            # 摘要里只出现一家（「康欣代发社保…打款到康欣」「金沁罗会计对账…」这种），
+            # 抓出来的开票方和收票方会是同一家，记成「康欣开票给康欣」既看不懂也进不了往来。
+            # 这一列本来就是「已提供成本票」，票是我方开给挂靠单位的，直接按原意归位。
+            if iss == rcv:
+                iss, rcv = '泓普', unit
+            # 本行自己有销项，而且「已提供成本票」正好等于本行「应收成本票」：
+            # 这一格是我方补给挂靠单位的那张成本票，不是挂靠单位又往外开了一张
+            # （康欣!50 的 66,500 就是这样，原来被当成第二笔销项，跟金沁表里的同一张票撞了）
+            elif abs(sale) > 0.004 and abs(cost - cdue_r) <= 0.004 and abs(cdue_r) > 0.004:
+                iss = next((u for u in ('仟茂', '泓普') if u in (memo or '')), '泓普')
+                rcv = unit
             kind = '成本票' if iss in US else '销项开票'
             ev = {**base, 'kind': kind, 'payer': iss, 'payee': rcv, 'amt': round(cost, 2),
                   'mfee': 0, 'cost_due': 0, 'from_cost_col': True}
@@ -202,6 +214,18 @@ for sh, mp in M.items():
         if abs(bd) > 0.004:
             events.append({**base, 'kind': '扣质保金', 'payer': unit, 'payee': '泓普',
                            'amt': round(bd, 2), 'mfee': 0, 'cost_due': 0})
+        # 德誉嘉表最右边那三列「合伙项目应付款」：合伙方那一份该转给人家的钱，
+        # 原来一笔都没进系统，往来台账上看不到
+        pd_ = num(ws, r, mp.get('partner_due'))
+        if abs(pd_) > 0.004:
+            events.append({**base, 'kind': '其他应付发生', 'payer': unit, 'payee': unit,
+                           'amt': round(pd_, 2), 'mfee': 0, 'cost_due': 0,
+                           'memo': (memo or '合伙项目应付款') + '（合伙项目应付款）'})
+        pp_ = num(ws, r, mp.get('partner_paid'))
+        if abs(pp_) > 0.004:
+            events.append({**base, 'kind': '其他应付支付', 'payer': unit, 'payee': unit,
+                           'amt': round(pp_, 2), 'mfee': 0, 'cost_due': 0,
+                           'memo': (memo or '合伙项目应付款') + '（已付合伙方）'})
 
 # ---------------- 逐表把税费尾差配平到原表合计行 ----------------
 # 原表每一行的税费小数位比显示的多，逐行取两位再相加会跟合计行差上一两分，

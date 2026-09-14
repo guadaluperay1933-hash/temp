@@ -110,18 +110,25 @@ for u in HOLD:
 # ---------- ② 8 张单位竖版明细的期间合计 ----------
 for u in HOLD:
     ws = wb[f'{u}明细']
-    mine = [x for x in rows if x['src'] == u]
+    mine = [x for x in rows if x['src'] == u]      # 历史行的归属单位＝来源表
     chk(f'{u}明细·销售开票金额',
         R2(sum(x['amt'] for x in mine if x['kind'] == '销项开票' and x['ocol'] != '已开成本票')),
-        ws['H6'].value)
-    chk(f'{u}明细·应扣管理费', R2(sum(x['mfee'] for x in mine)), ws['I6'].value)
-    chk(f'{u}明细·应到成本票', R2(sum(x['due'] for x in mine)), ws['J6'].value)
+        ws['H7'].value)
+    chk(f'{u}明细·应扣管理费', R2(sum(x['mfee'] for x in mine)), ws['I7'].value)
+    chk(f'{u}明细·应到成本票', R2(sum(x['due'] for x in mine)), ws['J7'].value)
     chk(f'{u}明细·已到成本票',
-        R2(sum(x['amt'] for x in mine if x['ocol'] == '已开成本票')), ws['K6'].value)
-    chk(f'{u}明细·应扣税费', R2(sum(x['taxsum'] for x in mine)), ws['Q6'].value)
-    chk(f'{u}明细·已交税', R2(sum(x['amt'] for x in mine if x['kind'] == '已交税')), ws['R6'].value)
-    chk(f'{u}明细·业主付给挂靠', R2(sum(x['amt'] for x in mine if x['kind'] == '挂靠代收')), ws['S6'].value)
-    chk(f'{u}明细·挂靠转我方', R2(sum(x['amt'] for x in mine if x['kind'] == '我方收款')), ws['T6'].value)
+        R2(sum(x['amt'] for x in mine if x['ocol'] == '已开成本票')), ws['K7'].value)
+    chk(f'{u}明细·代发工资',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '工资扣抵')), ws['L7'].value)
+    chk(f'{u}明细·应扣税费', R2(sum(x['taxsum'] for x in mine)), ws['R7'].value)
+    chk(f'{u}明细·已交税', R2(sum(x['amt'] for x in mine if x['kind'] == '已交税')), ws['S7'].value)
+    chk(f'{u}明细·业主付给挂靠', R2(sum(x['amt'] for x in mine if x['kind'] == '挂靠代收')), ws['U7'].value)
+    chk(f'{u}明细·挂靠转我方', R2(sum(x['amt'] for x in mine if x['kind'] == '我方收款')), ws['V7'].value)
+    chk(f'{u}明细·管理费结算',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '管理费结算')), ws['W7'].value)
+    chk(f'{u}明细·扣质保金',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '扣质保金')), ws['X7'].value)
+    chk(f'{u}明细·返管理费', R2(sum(x['ar'] for x in mine if x['ar'] > 0)), ws['Y7'].value)
 
 # ---------- ③ 项目汇总（逐项目） ----------
 ws = wb['项目汇总']
