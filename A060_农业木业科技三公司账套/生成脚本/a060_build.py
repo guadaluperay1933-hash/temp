@@ -87,7 +87,7 @@ def filter_band(ws, lastcol, co_default=None,
 # ============================================================ 参数设置
 ws = wb.create_sheet(SH_PARAM)
 title(ws, '参数设置', 'J', '一年一套表：先把下面的会计年度改成本年度，再另存为新文件，就是新一年的账。'
-                          '其余参数一般不用动。')
+                          '这套表是内账口径——全部含税核算、税按实缴进费用，右边有说明。')
 widths(ws, {'A':14,'B':22,'C':14,'D':30,'E':14,'F':14,'G':14,'H':14,'I':14,'J':30})
 put(ws, 'A5', '会计年度', font=F_H2, fill=FILL_HDR2)
 put(ws, 'B5', YEAR, font=Font(name='微软雅黑', size=12, bold=True, color='0000C0'), fill=FILL_IN, fmt='0')
@@ -95,14 +95,16 @@ put(ws, 'C5', '期初日期', font=F_H2, fill=FILL_HDR2)
 put(ws, 'D5', '=DATE($B$5,1,1)', font=F_TOT, fmt=DATE)
 put(ws, 'E5', '期末日期', font=F_H2, fill=FILL_HDR2)
 put(ws, 'F5', '=DATE($B$5,12,31)', font=F_TOT, fmt=DATE)
-put(ws, 'G5', '附加税率', font=F_H2, fill=FILL_HDR2)
+put(ws, 'G5', '附加税率（参考）', font=F_H2, fill=FILL_HDR2)
 put(ws, 'H5', SURTAX_RATE, font=F_IN, fill=FILL_IN, fmt=PCT)
-put(ws, 'I5', '所得税率', font=F_H2, fill=FILL_HDR2)
+put(ws, 'I5', '所得税率（参考）', font=F_H2, fill=FILL_HDR2)
 put(ws, 'J5', CIT_RATE, font=F_IN, fill=FILL_IN, fmt=PCT)
 put(ws, 'A6', '说明', font=F_NOTE, align=CL, border=None)
 ws.merge_cells('B6:J6')
-put(ws, 'B6', '附加税率＝城建税 7%＋教育费附加 3%＋地方教育附加 2%；所得税率按小微企业实际税负 5% 预置'
-              '（年应纳税所得额 300 万以内）。农林牧渔中的林木种植所得免征企业所得税，农业基地公司示例里没提所得税。',
+put(ws, 'B6', '本账套是内账：收入成本费用一律含税核算，税按实际缴纳当期计入费用，不计提、不拆进项销项。'
+              '这两个税率只是算税时给你参考用（附加税＝城建 7%＋教育费附加 3%＋地方教育附加 2%；'
+              '所得税按小微实际税负 5%），表里的任何计算都不用它们。'
+              '农林牧渔中的林木种植所得免征企业所得税、自产农产品销售免征增值税，农业基地公司示例里就没有税。',
     font=F_NOTE, align=CL, border=None)
 
 hdr(ws, 'A8', '一、三家公司', span='A8:J8', font=F_H2, fill=FILL_HDR2)
@@ -134,12 +136,13 @@ for r in range(EXP_LAST + 1, 16 + 60):
     put(ws, f'B{r}', None, font=F_IN, fill=FILL_IN)
     ws.merge_cells(f'C{r}:D{r}'); put(ws, f'C{r}', None, fmt=MONEY)
 EXP_END = 15 + 60
-put(ws, 'F16', '计税方式四选一：', font=F_H2, align=CL, border=None)
+put(ws, 'F16', '内账口径（这套表的核心约定）：', font=F_H2, align=CL, border=None)
 for i, (k, v) in enumerate([
-        ('一般计税', '单价是不含税价。金额＝数量×单价，税额＝金额×税率'),
-        ('含税单价', '单价是含税价。价税合计＝数量×单价，倒算不含税金额'),
-        ('免税',     '税额恒为 0（自产农产品、化肥农药苗木等）'),
-        ('农产品扣除', '收购价即价税合计，按扣除率算可抵扣进项，其余进成本')]):
+        ('含税核算', '收入、成本、费用一律按实际成交的含税金额入账，不拆进项销项，也不设进项/销项科目'),
+        ('实交税费', '增值税、附加税、所得税、个税都在实际缴纳那个月，按缴的钱直接进费用'),
+        ('缴税怎么录', '【资金流水】选「缴纳税费」→ 对方科目选税金及附加或所得税费用 → 费用项目选税种'),
+        ('不计提税金', '不做「计提应交税费」的分录，资产负债表上也就没有应交税费余额（期初有欠税除外）'),
+        ('开票税率', '商品档案上的税率只用来提醒开票时选哪一档，不参与任何计算')]):
     put(ws, f'F{17+i}', k, font=F_TOT, fill=FILL_TOT)
     ws.merge_cells(f'G{17+i}:J{17+i}')
     put(ws, f'G{17+i}', v, font=F_TXT, align=CL)
@@ -188,13 +191,13 @@ A_ITEM = f'{SH_ACC}!$F${ACC_0}:$F${ACC_1}'
 
 # ============================================================ 记账规则
 ws = wb.create_sheet(SH_RULE)
-title(ws, '记账规则（业务类型 → 借贷分录）', 'Q',
+title(ws, '记账规则（业务类型 → 借贷分录）', 'N',
       '录入表只填业务，借贷两条腿由这张表决定。科目里的 @ 是占位符：'
       '@结算＝按结算方式取（挂账→应收/应付、现金→库存现金、银行→银行存款）；'
       '@存货/@收入/@成本＝按商品档案该商品设的科目取；@账户＝资金流水那行选的账户；@对方＝那行填的对方科目。'
       '看不惯哪条改哪条，改完全表立刻跟着变。')
 widths(ws, {'A':16,'B':30})
-for c in 'CDEFGHIJKLMNOPQ': widths(ws, {c: 15})
+for c in 'CDEFGHIJKLMN': widths(ws, {c: 15})
 RB_0 = 6
 def rule_block(r0, rules, nlegs, label):
     hdr(ws, f'A{r0-2}', label, span=f'A{r0-2}:{L(2+nlegs*3)}{r0-2}', font=F_H2, fill=FILL_HDR2)
@@ -211,19 +214,19 @@ def rule_block(r0, rules, nlegs, label):
             put(ws, f'{L(5+k*3)}{r}', code or None, font=F_IN, fill=FILL_IN)
     return r0 + len(rules) - 1
 
-RB_1 = rule_block(RB_0, RULE_BUY, LEG_BY, '一、购销流水（5 条腿：结算 / 收入或存货 / 税 / 结转成本借 / 结转成本贷）')
+RB_1 = rule_block(RB_0, RULE_BUY, LEG_BY, '一、购销流水（4 条腿：结算 / 收入或存货 / 结转成本借 / 结转成本贷）')
 RC_0 = RB_1 + 4
-RC_1 = rule_block(RC_0, RULE_CASH, LEG_CS, '二、资金流水（3 条腿：账户 / 对方 / 税）')
+RC_1 = rule_block(RC_0, RULE_CASH, LEG_CS, '二、资金流水（2 条腿：账户 / 对方）')
 RP_0 = RC_1 + 4
 RP_1 = rule_block(RP_0, RULE_PROD, LEG_PD, '三、生产加工（2 条腿）')
 put(ws, f'A{RP_1+2}', '四、其他分录', font=F_H2, fill=FILL_HDR2)
-ws.merge_cells(f'B{RP_1+2}:Q{RP_1+2}')
+ws.merge_cells(f'B{RP_1+2}:N{RP_1+2}')
 put(ws, f'B{RP_1+2}', '没有规则表——直接在【其他分录】里填借方科目、贷方科目和金额，一借一贷。'
                       '一借多贷就拆成几行写。', font=F_TXT, align=CL)
 page(ws)
-R_BUY  = f'{SH_RULE}!$A${RB_0}:$Q${RB_1}'
+R_BUY  = f'{SH_RULE}!$A${RB_0}:$N${RB_1}'
 R_BUYK = f'{SH_RULE}!$A${RB_0}:$A${RB_1}'
-R_CASH = f'{SH_RULE}!$A${RC_0}:$K${RC_1}'
+R_CASH = f'{SH_RULE}!$A${RC_0}:$H${RC_1}'
 R_CASHK= f'{SH_RULE}!$A${RC_0}:$A${RC_1}'
 R_PROD = f'{SH_RULE}!$A${RP_0}:$H${RP_1}'
 R_PRODK= f'{SH_RULE}!$A${RP_0}:$A${RP_1}'
@@ -233,12 +236,12 @@ PROD_KINDS = '"' + ','.join(r[0] for r in RULE_PROD) + '"'
 
 # ============================================================ 商品档案
 ws = wb.create_sheet(SH_GD)
-title(ws, '商品档案', 'N',
-      '三家公司的料和成品都登在这里，用「所属公司」分开。存货/收入/成本科目决定这个商品的分录进哪个科目；'
-      '默认税率和计税方式会自动带到购销流水，单笔可以改。')
-widths(ws, {'A':11,'B':24,'C':18,'D':8,'E':10,'F':11,'G':13,'H':15,'I':15,'J':9,'K':13,'L':26,'M':13,'N':10})
+title(ws, '商品档案', 'M',
+      '三家公司的料和成品都登在这里，用「所属公司」分开。存货/收入/成本科目决定这个商品的分录进哪个科目。'
+      '内账是含税核算，「开票参考税率」只是登记开票时用哪档，不参与任何计算。')
+widths(ws, {'A':11,'B':24,'C':18,'D':8,'E':10,'F':11,'G':13,'H':15,'I':15,'J':13,'K':26,'L':13,'M':10})
 headers(ws, HR, 1, ['商品编码', '商品名称', '规格型号', '单位', '所属公司', '存货类别',
-                    '存货科目', '收入科目', '成本科目', '默认税率', '计税方式', '备注',
+                    '存货科目', '收入科目', '成本科目', '开票参考税率', '备注',
                     '本年结存金额', '校验'])
 for i, g in enumerate(GOODS):
     r = GD_0 + i
@@ -246,15 +249,14 @@ for i, g in enumerate(GOODS):
         put(ws, f'{L(1+j)}{r}', v if v != '' else None, font=F_IN, fill=FILL_IN,
             align=CL if j in (1, 2) else C)
     put(ws, f'J{r}', g[9], font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'K{r}', g[10], font=F_IN, fill=FILL_IN)
-    put(ws, f'L{r}', g[11] or None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'K{r}', g[10] or None, font=F_IN, fill=FILL_IN, align=CL)
 for r in range(GD_0, GD_1 + 1):
-    for c in 'ABCDEFGHIKL':
+    for c in 'ABCDEFGHIK':
         if ws[f'{c}{r}'].value is None: put(ws, f'{c}{r}', None, font=F_IN, fill=FILL_IN)
     if ws[f'J{r}'].value is None: put(ws, f'J{r}', None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'M{r}', f'=IF($A{r}="","",SUMIFS({SH_INV}!$U${GD_0}:$U${GD_1},{SH_INV}!$B${GD_0}:$B${GD_1},$A{r},'
+    put(ws, f'L{r}', f'=IF($A{r}="","",SUMIFS({SH_INV}!$U${GD_0}:$U${GD_1},{SH_INV}!$B${GD_0}:$B${GD_1},$A{r},'
                      f'{SH_INV}!$A${GD_0}:$A${GD_1},$E{r}))', font=F_LINK, fmt=MONEY)
-    put(ws, f'N{r}', f'=IF($A{r}="","",IF(COUNTIF($A${GD_0}:$A${GD_1},$A{r})>1,"编码重复",'
+    put(ws, f'M{r}', f'=IF($A{r}="","",IF(COUNTIF($A${GD_0}:$A${GD_1},$A{r})>1,"编码重复",'
                      f'IF($B{r}="","缺名称",IF(COUNTIF({A_NAME},$G{r})=0,"存货科目不存在",'
                      f'IF(AND($F{r}<>"原材料",COUNTIF({A_NAME},$H{r})=0),"收入科目不存在","OK")))))',
         font=F_TXT)
@@ -263,9 +265,8 @@ dv_list(ws, f'F{GD_0}:F{GD_1}', '"原材料,半成品,产成品,周转材料"')
 dv_list(ws, f'G{GD_0}:G{GD_1}', f'={A_NAME}')
 dv_list(ws, f'H{GD_0}:H{GD_1}', f'={A_NAME}')
 dv_list(ws, f'I{GD_0}:I{GD_1}', f'={A_NAME}')
-dv_list(ws, f'K{GD_0}:K{GD_1}', '"' + ','.join(TAXMODE) + '"')
-ws.conditional_formatting.add(f'N{GD_0}:N{GD_1}',
-    FormulaRule(formula=[f'AND($N{GD_0}<>"",$N{GD_0}<>"OK")'], fill=FILL_WARN))
+ws.conditional_formatting.add(f'M{GD_0}:M{GD_1}',
+    FormulaRule(formula=[f'AND($M{GD_0}<>"",$M{GD_0}<>"OK")'], fill=FILL_WARN))
 page(ws, titles=f'{HR}:{HR}')
 ws.freeze_panes = f'C{GD_0}'
 
@@ -279,7 +280,6 @@ G_INV  = f'{SH_GD}!$G${GD_0}:$G${GD_1}'
 G_REV  = f'{SH_GD}!$H${GD_0}:$H${GD_1}'
 G_CST  = f'{SH_GD}!$I${GD_0}:$I${GD_1}'
 G_RATE = f'{SH_GD}!$J${GD_0}:$J${GD_1}'
-G_MODE = f'{SH_GD}!$K${GD_0}:$K${GD_1}'
 
 # ============================================================ 往来单位
 ws = wb.create_sheet(SH_PT)
@@ -388,70 +388,52 @@ OI_Q, OI_A = f'{SH_OPEN}!$K${OI_0}:$K${OI_1}', f'{SH_OPEN}!$L${OI_0}:$L${OI_1}'
 
 # ============================================================ 购销流水
 ws = wb.create_sheet(SH_BUY)
-title(ws, '购销流水（录入表 · 全部行都显示）', 'AD',
-      '进货、卖货都在这一张表上，用「公司」列分开。这里只管货和票，一律挂应收/应付；'
-      '收钱付钱到【资金流水】记一笔，账户余额和往来才对得上。'
-      '灰底列自动算，别手工改；「计税方式 / 税率」按商品自动带出，个别单子直接覆盖那一格。'
+title(ws, '购销流水（录入表 · 全部行都显示）', 'Z',
+      '进货、卖货都在这一张表上，用「公司」列分开。**内账含税核算**：单价填实际成交的含税价，'
+      '金额＝数量×单价，不拆进项销项，收入和成本都是含税数。'
+      '这里只管货和票，一律挂应收/应付；收钱付钱到【资金流水】记一笔，账户余额和往来才对得上。'
       '退货用「销售退回 / 采购退回」，数量照正数填。'
-      '向农户收购原木：往来单位选农户，计税方式用「农产品扣除」，发票类型选「收购发票」。')
-BW = {'A':6,'B':11,'C':7,'D':11,'E':16,'F':10,'G':22,'H':15,'I':7,'J':10,'K':10,'L':11,'M':8,
-      'N':10,'O':12,'P':24,'Q':14,'R':13,'S':13,'T':12,'U':13,'V':12,'W':11,'X':13,'Y':13,
-      'Z':11,'AA':13,'AB':9,'AC':7,'AD':10}
+      '向农户收购原木：往来单位选那个农户，发票类型选「收购发票」，单价就填收购价。')
+BW = {'A':6,'B':11,'C':7,'D':11,'E':17,'F':10,'G':22,'H':15,'I':7,'J':10,'K':12,'L':10,'M':13,
+      'N':24,'O':14,'P':15,'Q':14,'R':12,'S':11,'T':13,'U':13,'V':12,'W':13,'X':8,'Y':7,'Z':10}
 widths(ws, BW)
-BH = ['序号','日期','公司','业务类型','往来单位','商品编码','商品名称','规格型号','单位','数量','单价',
-      '计税方式','税率','发票类型','发票号码','摘要','备注','校验',
-      '不含税金额','税额','价税合计','结算科目','存货科目','收入科目','成本科目','成本单价','成本金额',
+BH = ['序号','日期','公司','业务类型','往来单位','商品编码','商品名称','规格型号','单位','数量',
+      '含税单价','发票类型','发票号码','摘要','备注','校验',
+      '金额（含税）','结算科目','存货科目','收入科目','成本科目','成本单价','成本金额',
       '内部','年度','所属月份']
-headers(ws, HR, 1, BH[:18])
-headers(ws, HR, 19, BH[18:], fill=FILL_AUTO, font=F_HDR2)
+headers(ws, HR, 1, BH[:16])
+headers(ws, HR, 17, BH[16:], fill=FILL_AUTO, font=F_HDR2)
 EXB = {i: e for i, e in enumerate(EX_BUY)}
 for i in range(BY_1 - BY_0 + 1):
     r = BY_0 + i
     put(ws, f'A{r}', f'=IF($B{r}="","",ROW()-{BY_0-1})', font=F_NOTE, fmt='0')
+    vals = {}
     if i in EXB:
         d, co, kind, pt, gc, qty, price, inv, invno, memo = EXB[i]
-        put(ws, f'B{r}', dt.date.fromisoformat(d), font=F_IN, fill=FILL_IN, fmt=DATE)
-        put(ws, f'C{r}', co, font=F_IN, fill=FILL_IN)
-        put(ws, f'D{r}', kind, font=F_IN, fill=FILL_IN)
-        put(ws, f'E{r}', pt, font=F_IN, fill=FILL_IN, align=CL)
-        put(ws, f'F{r}', gc, font=F_IN, fill=FILL_IN)
-        put(ws, f'J{r}', qty, font=F_IN, fill=FILL_IN, fmt=QTY)
-        put(ws, f'K{r}', price, font=F_IN, fill=FILL_IN, fmt='#,##0.0000')
-        put(ws, f'N{r}', inv, font=F_IN, fill=FILL_IN)
-        put(ws, f'O{r}', invno or None, font=F_IN, fill=FILL_IN)
-        put(ws, f'P{r}', memo, font=F_IN, fill=FILL_IN, align=CL)
-    else:
-        for c, fmt in (('B', DATE), ('C', None), ('D', None), ('E', None), ('F', None),
-                       ('J', QTY), ('K', '#,##0.0000'), ('N', None), ('O', None), ('P', None)):
-            put(ws, f'{c}{r}', None, font=F_IN, fill=FILL_IN, fmt=fmt,
-                align=CL if c in ('E', 'P') else C)
-    put(ws, f'Q{r}', None, font=F_IN, fill=FILL_IN, align=CL)
+        vals = {'B': dt.date.fromisoformat(d), 'C': co, 'D': kind, 'E': pt, 'F': gc,
+                'J': qty, 'K': price, 'L': inv, 'M': invno or None, 'N': memo}
+    for c, fmt, al in (('B', DATE, C), ('C', None, C), ('D', None, C), ('E', None, CL), ('F', None, C),
+                       ('J', QTY, C), ('K', '#,##0.0000', C), ('L', None, C), ('M', None, C),
+                       ('N', None, CL), ('O', None, CL)):
+        put(ws, f'{c}{r}', vals.get(c), font=F_IN, fill=FILL_IN, fmt=fmt, align=al)
     put(ws, f'G{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_NAME)})', font=F_LINK, align=CL)
     put(ws, f'H{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_SPEC)})', font=F_LINK, align=CL)
     put(ws, f'I{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_UNIT)})', font=F_LINK)
-    put(ws, f'L{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_MODE)})', font=F_IN, fill=FILL_IN)
-    put(ws, f'M{r}', f'=IF($F{r}="","",{nlk(f"$F{r}", G_CODE, G_RATE)})', font=F_IN, fill=FILL_IN, fmt=PCT)
-    base = f'ROUND(N($J{r})*N($K{r}),2)'
-    put(ws, f'S{r}', f'=IF($F{r}="","",IF($L{r}="含税单价",ROUND({base}/(1+N($M{r})),2),'
-                     f'IF($L{r}="农产品扣除",{base}-ROUND({base}*N($M{r}),2),{base})))',
-        font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'T{r}', f'=IF($F{r}="","",IF($L{r}="免税",0,IF($L{r}="含税单价",{base}-$S{r},'
-                     f'ROUND({base}*N($M{r}),2))))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'U{r}', f'=IF($F{r}="","",ROUND($S{r}+$T{r},2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'V{r}', f'=IF($D{r}="","",IF(LEFT($D{r},2)="销售","应收账款","应付账款"))',
+    put(ws, f'Q{r}', f'=IF($F{r}="","",ROUND(N($J{r})*N($K{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'R{r}', f'=IF($D{r}="","",IF(LEFT($D{r},2)="销售","应收账款","应付账款"))',
         font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'W{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_INV)})', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'X{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_REV)})', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'Y{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_CST)})', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'Z{r}', f'=IF($F{r}="","",SUMIFS({SH_INV}!$N${GD_0}:$N${GD_1},{SH_INV}!$A${GD_0}:$A${GD_1},$C{r},'
+    put(ws, f'S{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_INV)})', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'T{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_REV)})', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'U{r}', f'=IF($F{r}="","",{lk(f"$F{r}", G_CODE, G_CST)})', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'V{r}', f'=IF($F{r}="","",SUMIFS({SH_INV}!$N${GD_0}:$N${GD_1},{SH_INV}!$A${GD_0}:$A${GD_1},$C{r},'
                      f'{SH_INV}!$B${GD_0}:$B${GD_1},$F{r}))', font=F_LINK, fill=FILL_AUTO, fmt='#,##0.0000')
-    put(ws, f'AA{r}', f'=IF(OR($D{r}="销售出库",$D{r}="销售退回"),ROUND(N($J{r})*N($Z{r}),2),0)',
+    put(ws, f'W{r}', f'=IF(OR($D{r}="销售出库",$D{r}="销售退回"),ROUND(N($J{r})*N($V{r}),2),0)',
         font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
     _inner = lk(f'$E{r}', T_NAME, T_INNER, dflt=NO_Q)
-    put(ws, f'AB{r}', f'=IF($E{r}="","",{_inner})', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'AC{r}', f'=IF($B{r}="","",YEAR($B{r}))', font=F_LINK, fill=FILL_AUTO, fmt='0')
-    put(ws, f'AD{r}', f'=IF($B{r}="","",TEXT($B{r},"yyyy-mm"))', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'R{r}', f'=IF(AND($B{r}="",$D{r}="",$F{r}=""),"",'
+    put(ws, f'X{r}', f'=IF($E{r}="","",{_inner})', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'Y{r}', f'=IF($B{r}="","",YEAR($B{r}))', font=F_LINK, fill=FILL_AUTO, fmt='0')
+    put(ws, f'Z{r}', f'=IF($B{r}="","",TEXT($B{r},"yyyy-mm"))', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'P{r}', f'=IF(AND($B{r}="",$D{r}="",$F{r}=""),"",'
                      f'IF(NOT(ISNUMBER($B{r})),"日期无效",'
                      f'IF(ISNA(MATCH($C{r},{SH_PARAM}!$A$10:$A$12,0)),"公司无效",'
                      f'IF(ISNA(MATCH($D{r},{R_BUYK},0)),"业务类型无效",'
@@ -459,17 +441,17 @@ for i in range(BY_1 - BY_0 + 1):
                      f'IF({lk(f"$F{r}", G_CODE, G_CO)}<>$C{r},"商品不属于该公司",'
                      f'IF(AND($E{r}<>"",ISNA(MATCH($E{r},{T_NAME},0))),"往来单位未建档",'
                      f'IF(N($J{r})=0,"数量为 0",'
-                     f'IF(AND(LEFT($D{r},2)="销售",$Y{r}=""),"该商品没设成本科目",'
-                     f'IF(YEAR($B{r})<>{PARAM_Y},"不在本会计年度","OK"))))))))))', font=F_TXT)
+                     f'IF(N($K{r})=0,"单价为 0",'
+                     f'IF(AND(LEFT($D{r},2)="销售",$U{r}=""),"该商品没设成本科目",'
+                     f'IF(YEAR($B{r})<>{PARAM_Y},"不在本会计年度","OK")))))))))))', font=F_TXT)
 dv_list(ws, f'C{BY_0}:C{BY_1}', '"' + ','.join(CO_NAMES) + '"')
 dv_list(ws, f'D{BY_0}:D{BY_1}', BUY_KINDS)
 dv_list(ws, f'E{BY_0}:E{BY_1}', f'={T_NAME}')
 dv_list(ws, f'F{BY_0}:F{BY_1}', f'={G_CODE}')
-dv_list(ws, f'L{BY_0}:L{BY_1}', '"' + ','.join(TAXMODE) + '"')
-dv_list(ws, f'N{BY_0}:N{BY_1}', '"' + ','.join(INVTYPE) + '"')
+dv_list(ws, f'L{BY_0}:L{BY_1}', '"' + ','.join(INVTYPE) + '"')
 dv_num(ws, f'K{BY_0}:K{BY_1}', 'greaterThanOrEqual', '-1000000000')
-ws.conditional_formatting.add(f'R{BY_0}:R{BY_1}',
-    FormulaRule(formula=[f'AND($R{BY_0}<>"",$R{BY_0}<>"OK")'], fill=FILL_WARN))
+ws.conditional_formatting.add(f'P{BY_0}:P{BY_1}',
+    FormulaRule(formula=[f'AND($P{BY_0}<>"",$P{BY_0}<>"OK")'], fill=FILL_WARN))
 page(ws, titles=f'{HR}:{HR}')
 ws.freeze_panes = f'G{BY_0}'
 KB = lambda c: f'{SH_BUY}!${c}${BY_0}:${c}${BY_1}'
@@ -537,18 +519,18 @@ AK_OPEN = f'{SH_ACCT}!$H${AC_0}:$H${AC_1}'
 
 # ============================================================ 资金流水（混合录入 · 实时结余额）
 ws = wb.create_sheet(SH_CASH)
-title(ws, '资金流水（录入表 · 收支混排、逐行结出账户余额）', 'W',
+title(ws, '资金流水（录入表 · 收支混排、逐行结出账户余额）', 'T',
       '所有账户的收支都按发生顺序记在这一张表上：收进来的填「收入金额」，付出去的填「支出金额」，'
       '右边「账户余额」按账户逐行滚出来——几家公司共用一个账号也没关系，余额是按账户算的，'
-      '账是按「公司」列各记各的。'
+      '账是按「公司」列各记各的。金额一律填实际收付的含税金额，不拆税。'
       '按日期先后往下录，余额才有意义（录反了校验列会提示）。'
       '收付货款选好「往来单位」，就自动冲【往来台账】里那家的应收/应付；'
-      '「关联单号」可以写对应的购销流水序号，方便日后核销对单。')
-widths(ws, {'A':6,'B':11,'C':7,'D':17,'E':14,'F':17,'G':21,'H':13,'I':14,'J':14,'K':8,'L':26,
-            'M':12,'N':14,'O':16,'P':10,'Q':13,'R':12,'S':13,'T':12,'U':8,'V':15,'W':7})
+      '交税选「缴纳税费」，对方科目选税金及附加或所得税费用、费用项目选税种，当期直接进费用。')
+widths(ws, {'A':6,'B':11,'C':7,'D':17,'E':14,'F':17,'G':21,'H':14,'I':14,'J':14,'K':26,
+            'L':12,'M':14,'N':18,'O':10,'P':13,'Q':12,'R':7,'S':15,'T':7})
 headers(ws, HR, 1, ['序号','日期','公司','账户','业务类型','往来单位','对方科目','费用项目',
-                    '收入金额','支出金额','税率','摘要','关联单号','备注','校验'])
-headers(ws, HR, 16, ['所属月份','金额','账户科目','不含税金额','税额','收支','账户余额','年度'],
+                    '收入金额','支出金额','摘要','关联单号','备注','校验'])
+headers(ws, HR, 15, ['所属月份','金额','账户科目','收支','账户余额','年度'],
         fill=FILL_AUTO, font=F_HDR2)
 EXC = {i: e for i, e in enumerate(EX_CASH)}
 for i in range(CS_1 - CS_0 + 1):
@@ -556,52 +538,51 @@ for i in range(CS_1 - CS_0 + 1):
     put(ws, f'A{r}', f'=IF($B{r}="","",ROW()-{CS_0-1})', font=F_NOTE, fmt='0')
     vals = {}
     if i in EXC:
-        d, co, acct, kind, pt, ctr, ei, cin, cout, rate, ref, memo = EXC[i]
+        d, co, acct, kind, pt, ctr, ei, cin, cout, ref, memo = EXC[i]
         vals = {'B': dt.date.fromisoformat(d), 'C': co, 'D': acct, 'E': kind, 'F': pt or None,
                 'G': ctr or None, 'H': ei or None, 'I': cin or None, 'J': cout or None,
-                'K': rate, 'L': memo, 'M': ref or None}
+                'K': memo, 'L': ref or None}
     for c, fmt, al in (('B', DATE, C), ('C', None, C), ('D', None, C), ('E', None, C), ('F', None, CL),
                        ('G', None, CL), ('H', None, C), ('I', MONEY, C), ('J', MONEY, C),
-                       ('K', PCT, C), ('L', None, CL), ('M', None, C), ('N', None, CL)):
+                       ('K', None, CL), ('L', None, C), ('M', None, CL)):
         put(ws, f'{c}{r}', vals.get(c), font=F_IN, fill=FILL_IN, fmt=fmt, align=al)
-    put(ws, f'P{r}', f'=IF($B{r}="","",TEXT($B{r},"yyyy-mm"))', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'Q{r}', f'=IF($E{r}="","",ROUND(N($I{r})+N($J{r}),2))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'R{r}', f'=IF($D{r}="","",{lk(f"$D{r}", AK_NAME, AK_ACC)})', font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'S{r}', f'=IF($E{r}="","",ROUND($Q{r}/(1+N($K{r})),2))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'T{r}', f'=IF($E{r}="","",ROUND($Q{r}-$S{r},2))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'U{r}', f'=IF($E{r}="","",IFERROR(IF(INDEX({R_CASH},MATCH($E{r},{R_CASHK},0),4)="借","收","支"),""))',
+    put(ws, f'O{r}', f'=IF($B{r}="","",TEXT($B{r},"yyyy-mm"))', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'P{r}', f'=IF($E{r}="","",ROUND(N($I{r})+N($J{r}),2))', font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF($D{r}="","",{lk(f"$D{r}", AK_NAME, AK_ACC)})', font=F_LINK, fill=FILL_AUTO)
+    put(ws, f'R{r}', f'=IF($E{r}="","",IFERROR(IF(INDEX({R_CASH},MATCH($E{r},{R_CASHK},0),4)="借","收","支"),""))',
         font=F_LINK, fill=FILL_AUTO)
-    put(ws, f'V{r}', f'=IF($D{r}="","",ROUND(SUMIFS({AK_OPEN},{AK_NAME},$D{r})'
+    put(ws, f'S{r}', f'=IF($D{r}="","",ROUND(SUMIFS({AK_OPEN},{AK_NAME},$D{r})'
                      f'+SUMIFS($I${CS_0}:$I{r},$D${CS_0}:$D{r},$D{r})'
                      f'-SUMIFS($J${CS_0}:$J{r},$D${CS_0}:$D{r},$D{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'W{r}', f'=IF($B{r}="","",YEAR($B{r}))', font=F_LINK, fill=FILL_AUTO, fmt='0')
+    put(ws, f'T{r}', f'=IF($B{r}="","",YEAR($B{r}))', font=F_LINK, fill=FILL_AUTO, fmt='0')
     need_ctr = f'SUMPRODUCT(--(INDEX({R_CASH},MATCH($E{r},{R_CASHK},0),0)="@对方"))>0'
     prev = f'$B{r-1}' if r > CS_0 else '""'
-    put(ws, f'O{r}', f'=IF(AND($B{r}="",$E{r}="",$I{r}="",$J{r}=""),"",'
+    put(ws, f'N{r}', f'=IF(AND($B{r}="",$E{r}="",$I{r}="",$J{r}=""),"",'
                      f'IF(NOT(ISNUMBER($B{r})),"日期无效",'
                      f'IF(ISNA(MATCH($C{r},{SH_PARAM}!$A$10:$A$12,0)),"公司无效",'
                      f'IF(ISNA(MATCH($D{r},{AK_NAME},0)),"账户未建档",'
                      f'IF(ISNA(MATCH($E{r},{R_CASHK},0)),"业务类型无效",'
                      f'IF(AND(N($I{r})<>0,N($J{r})<>0),"收入和支出只能填一列",'
-                     f'IF($Q{r}=0,"金额为 0",'
-                     f'IF(AND($U{r}="收",N($I{r})=0),"这类业务是收款，金额填到收入列",'
-                     f'IF(AND($U{r}="支",N($J{r})=0),"这类业务是付款，金额填到支出列",'
+                     f'IF($P{r}=0,"金额为 0",'
+                     f'IF(AND($R{r}="收",N($I{r})=0),"这类业务是收款，金额填到收入列",'
+                     f'IF(AND($R{r}="支",N($J{r})=0),"这类业务是付款，金额填到支出列",'
                      f'IF(AND({need_ctr},$G{r}=""),"这个类型要填对方科目",'
                      f'IF(AND($G{r}<>"",ISNA(MATCH($G{r},{A_NAME},0))),"对方科目不存在",'
+                     f'IF(AND($E{r}="缴纳税费",$H{r}=""),"缴税请在费用项目里选税种",'
                      f'IF(AND($F{r}<>"",ISNA(MATCH($F{r},{T_NAME},0))),"往来单位未建档",'
                      f'IF(YEAR($B{r})<>{PARAM_Y},"不在本会计年度",'
                      f'IF(AND({prev}<>"",ISNUMBER({prev}),$B{r}<{prev}),"日期比上一行早，余额按行序滚，建议按日期录",'
-                     f'"OK"))))))))))))))', font=F_TXT)
+                     f'"OK")))))))))))))))', font=F_TXT)
 dv_list(ws, f'C{CS_0}:C{CS_1}', '"' + ','.join(CO_NAMES) + '"')
 dv_list(ws, f'D{CS_0}:D{CS_1}', f'={AK_NAME}')
 dv_list(ws, f'E{CS_0}:E{CS_1}', CASH_KINDS)
 dv_list(ws, f'F{CS_0}:F{CS_1}', f'={T_NAME}')
 dv_list(ws, f'G{CS_0}:G{CS_1}', f'={A_NAME}')
 dv_list(ws, f'H{CS_0}:H{CS_1}', f'={EXP_RNG}')
-ws.conditional_formatting.add(f'O{CS_0}:O{CS_1}',
-    FormulaRule(formula=[f'AND($O{CS_0}<>"",$O{CS_0}<>"OK")'], fill=FILL_WARN))
-ws.conditional_formatting.add(f'V{CS_0}:V{CS_1}',
+ws.conditional_formatting.add(f'N{CS_0}:N{CS_1}',
+    FormulaRule(formula=[f'AND($N{CS_0}<>"",$N{CS_0}<>"OK")'], fill=FILL_WARN))
+ws.conditional_formatting.add(f'S{CS_0}:S{CS_1}',
     CellIsRule(operator='lessThan', formula=['0'], fill=FILL_WARN))
 page(ws, titles=f'{HR}:{HR}')
 ws.freeze_panes = f'F{CS_0}'
@@ -769,9 +750,9 @@ for i in range(BY_1 - BY_0 + 1):
     for k in range(1, LEG_BY + 1):
         v = V_BY0 + i * LEG_BY + (k - 1)
         vou_row(v, SH_BUY, s, k, QB, R_BUY, R_BUYK, f'{QB}!$D{s}',
-                {'@结算': 'V', '@存货': 'W', '@收入': 'X', '@成本': 'Y'},
-                {'价税合计': 'U', '不含税金额': 'S', '税额': 'T', '成本金额': 'AA'},
-                'B', 'C', 'P', 'E', f'{QB}!$D{s}=""')
+                {'@结算': 'R', '@存货': 'S', '@收入': 'T', '@成本': 'U'},
+                {'金额': 'Q', '成本金额': 'W'},
+                'B', 'C', 'N', 'E', f'{QB}!$D{s}=""')
         if i < len(EX_BUY) and RB_LEGS[EX_BUY[i][2]][k - 1][0]:
             keep_v.append(v)
 # --- 资金流水 3 腿 ---
@@ -781,9 +762,9 @@ for i in range(CS_1 - CS_0 + 1):
     for k in range(1, LEG_CS + 1):
         v = V_CS0 + i * LEG_CS + (k - 1)
         vou_row(v, SH_CASH, s, k, QC, R_CASH, R_CASHK, f'{QC}!$E{s}',
-                {'@账户': 'R', '@对方': 'G'},
-                {'价税合计': 'Q', '不含税金额': 'S', '税额': 'T'},
-                'B', 'C', 'L', 'F', f'{QC}!$E{s}=""')
+                {'@账户': 'Q', '@对方': 'G'},
+                {'金额': 'P'},
+                'B', 'C', 'K', 'F', f'{QC}!$E{s}=""')
         if i < len(EX_CASH) and RC_LEGS[EX_CASH[i][3]][k - 1][0]:
             keep_v.append(v)
 # --- 生产加工 2 腿 ---
@@ -908,16 +889,16 @@ for r in range(GD_0, GD_1 + 1):
     put(ws, f'I{r}', f'=IF($B{r}="","",SUMIFS({OI_A},{OI_CO},$A{r},{OI_GC},$B{r}))', font=F_LINK, fmt=MONEY)
     put(ws, f'J{r}', f'=IF($B{r}="","",SUMIFS({KB("J")},{ck},{KB("D")},"采购入库")'
                      f'-SUMIFS({KB("J")},{ck},{KB("D")},"采购退回"))', font=F_LINK, fmt=QTY)
-    put(ws, f'K{r}', f'=IF($B{r}="","",SUMIFS({KB("S")},{ck},{KB("D")},"采购入库")'
-                     f'-SUMIFS({KB("S")},{ck},{KB("D")},"采购退回"))', font=F_LINK, fmt=MONEY)
+    put(ws, f'K{r}', f'=IF($B{r}="","",SUMIFS({KB("Q")},{ck},{KB("D")},"采购入库")'
+                     f'-SUMIFS({KB("Q")},{ck},{KB("D")},"采购退回"))', font=F_LINK, fmt=MONEY)
     put(ws, f'L{r}', f'=IF($B{r}="","",SUMIFS({KD("I")},{dk},{KD("E")},"产成品入库"))', font=F_LINK, fmt=QTY)
     put(ws, f'M{r}', f'=IF($B{r}="","",SUMIFS({KD("T")},{dk},{KD("E")},"产成品入库"))', font=F_LINK, fmt=MONEY)
     put(ws, f'N{r}', f'=IF($B{r}="","",IF(($H{r}+$J{r}+$L{r})=0,0,'
                      f'($I{r}+$K{r}+$M{r})/($H{r}+$J{r}+$L{r})))', font=F_TOT, fmt='#,##0.0000')
     put(ws, f'O{r}', f'=IF($B{r}="","",SUMIFS({KB("J")},{ck},{KB("D")},"销售出库")'
                      f'-SUMIFS({KB("J")},{ck},{KB("D")},"销售退回"))', font=F_LINK, fmt=QTY)
-    put(ws, f'P{r}', f'=IF($B{r}="","",SUMIFS({KB("AA")},{ck},{KB("D")},"销售出库")'
-                     f'-SUMIFS({KB("AA")},{ck},{KB("D")},"销售退回"))', font=F_LINK, fmt=MONEY)
+    put(ws, f'P{r}', f'=IF($B{r}="","",SUMIFS({KB("W")},{ck},{KB("D")},"销售出库")'
+                     f'-SUMIFS({KB("W")},{ck},{KB("D")},"销售退回"))', font=F_LINK, fmt=MONEY)
     put(ws, f'Q{r}', f'=IF($B{r}="","",SUMIFS({KD("I")},{dk},{KD("E")},"领用投入"))', font=F_LINK, fmt=QTY)
     put(ws, f'R{r}', f'=IF($B{r}="","",SUMIFS({KD("S")},{dk},{KD("E")},"领用投入"))', font=F_LINK, fmt=MONEY)
     put(ws, f'S{r}', f'=IF($B{r}="","",$H{r}+$J{r}+$L{r}-$O{r}-$Q{r})', font=F_TOT, fmt=QTY)
@@ -1201,8 +1182,8 @@ MG_S, MG_E, _ = filter_band(ws, 'G')
 widths(ws, {'A':30,'B':16,'C':16,'D':16,'E':17,'F':16,'G':17})
 CO_REFS = [f'{SH_PARAM}!$A${10+i}' for i in range(len(COS))]
 FULL_REFS = [f'{SH_PARAM}!$B${10+i}' for i in range(len(COS))]
-IS_ = (f'(SUMIFS({KB("S")},{KB("AB")},"是",{KB("D")},"销售出库")'
-       f'-SUMIFS({KB("S")},{KB("AB")},"是",{KB("D")},"销售退回"))')
+IS_ = (f'(SUMIFS({KB("Q")},{KB("X")},"是",{KB("D")},"销售出库")'
+       f'-SUMIFS({KB("Q")},{KB("X")},"是",{KB("D")},"销售退回"))')
 def inner_bal(acc, plus, minus, openrng):
     parts = []
     for n in FULL_REFS:
@@ -1328,7 +1309,7 @@ for cc in 'BCDEFG':
         font=F_TOT, fill=FILL_CHK, fmt=None)
 MG_LAST = B('平衡校验（资产总计 − 负债和所有者权益）')
 put(ws, f'A{MG_LAST+2}', '内部交易抵销明细', font=F_H2, fill=FILL_HDR2)
-for i, (lab, f) in enumerate([('内部销售收入（卖方不含税口径）', f'={IS_}'),
+for i, (lab, f) in enumerate([('内部销售收入（含税）', f'={IS_}'),
                               ('内部应收余额', f'={IR_AR}'),
                               ('内部应付余额', f'={IR_AP}'),
                               ('未实现内部存货利润（手工填，上面 B5）', f'=N({UP})')]):
@@ -1383,52 +1364,51 @@ ws.freeze_panes = f'B{AR_0}'
 
 # ============================================================ 税费台账
 ws = wb.create_sheet(SH_TAX)
-title(ws, '税费台账（分月 · 全年）', 'I',
-      '按月列销项、进项、应纳增值税、实缴、附加税和所得税计提。'
-      '「本月应纳」为负数表示当月有留抵，下月接着抵。这张表不随日期筛选变，看的就是全年十二个月。')
-widths(ws, {'A':10,'B':11,'C':16,'D':16,'E':16,'F':16,'G':16,'H':16,'I':30})
-headers(ws, HR, 1, ['公司','月份','销项税额','进项税额','本月应纳增值税','本月实缴增值税',
-                    '附加税计提','所得税计提','说明'])
+title(ws, '税费台账（分月实缴 · 全年）', 'K',
+      '内账按实交税费计入费用：这张表就是【资金流水】里「缴纳税费」那些行，按公司、按月、按税种摊开。'
+      '税种取的是那一行选的「费用项目」。右边放了当月含税收入，合计行给出全年税负率。'
+      '这张表不随日期筛选变，看的就是全年十二个月。')
+widths(ws, {'A':10,'B':11,'C':15,'D':16,'E':13,'F':15,'G':15,'H':13,'I':15,'J':16,'K':24})
+headers(ws, HR, 1, ['公司','月份'] + TAX_ITEMS + ['其他税费','本月合计','本月含税收入','说明'])
 TX_0 = 6
 r = TX_0
+TAXC = [L(3 + i) for i in range(len(TAX_ITEMS))]          # C D E F G
+OTHC, SUMC, REVC = L(3 + len(TAX_ITEMS)), L(4 + len(TAX_ITEMS)), L(5 + len(TAX_ITEMS))
 for ci, (short, full, _k, _b) in enumerate(COS):
     co = f'{SH_PARAM}!$A${10+ci}'
     r0 = r
     for m in range(1, 13):
-        m1 = f'DATE({PARAM_Y},{m},1)'
-        m2 = f'DATE({PARAM_Y},{m+1},0)'
+        m1, m2 = f'DATE({PARAM_Y},{m},1)', f'DATE({PARAM_Y},{m+1},0)'
+        cd = f',{KC("B")},">="&{m1},{KC("B")},"<="&{m2}'
+        bd = f',{KB("B")},">="&{m1},{KB("B")},"<="&{m2}'
         put(ws, f'A{r}', f'={co}', font=F_TXT)
         put(ws, f'B{r}', f'=TEXT({m1},"yyyy-mm")', font=F_TXT)
-        dr = f',{VE},">="&{m1},{VE},"<="&{m2}'
-        bd = f',{KB("B")},">="&{m1},{KB("B")},"<="&{m2}'
-        cd = f',{KC("B")},">="&{m1},{KC("B")},"<="&{m2}'
-        # 直接从购销/资金两张源表取，避开年末「结转销项/进项至未交增值税」那两笔把当月轧平
-        put(ws, f'C{r}', f'=SUMIFS({KB("T")},{KB("C")},{co},{KB("D")},"销售出库"{bd})'
-                         f'-SUMIFS({KB("T")},{KB("C")},{co},{KB("D")},"销售退回"{bd})'
-                         f'+SUMIFS({KC("T")},{KC("C")},{co},{KC("E")},"现销收款"{cd})'
-                         f'+SUMIFS({KC("T")},{KC("C")},{co},{KC("E")},"其他收入"{cd})', font=F_LINK, fmt=MONEY)
-        put(ws, f'D{r}', f'=SUMIFS({KB("T")},{KB("C")},{co},{KB("D")},"采购入库"{bd})'
-                         f'-SUMIFS({KB("T")},{KB("C")},{co},{KB("D")},"采购退回"{bd})'
-                         f'+SUMIFS({KC("T")},{KC("C")},{co},{KC("E")},"费用支出"{cd})'
-                         f'+SUMIFS({KC("T")},{KC("C")},{co},{KC("E")},"购置固定资产"{cd})', font=F_LINK, fmt=MONEY)
-        put(ws, f'E{r}', f'=ROUND($C{r}-$D{r},2)', font=F_TOT, fmt=MONEY)
-        put(ws, f'F{r}', f'=SUMIFS({KC("J")},{KC("C")},{co},{KC("E")},"缴纳税费",'
-                         f'{KC("G")},"应交税费-未交增值税",{KC("B")},">="&{m1},{KC("B")},"<="&{m2})',
+        for j, t in enumerate(TAX_ITEMS):
+            put(ws, f'{TAXC[j]}{r}', f'=SUMIFS({KC("P")},{KC("C")},{co},{KC("E")},"缴纳税费",'
+                                     f'{KC("H")},"{t}"{cd})', font=F_LINK, fmt=MONEY)
+        put(ws, f'{OTHC}{r}', f'=ROUND(SUMIFS({KC("P")},{KC("C")},{co},{KC("E")},"缴纳税费"{cd})'
+                              + ''.join(f'-{c}{r}' for c in TAXC) + ',2)', font=F_LINK, fmt=MONEY)
+        put(ws, f'{SUMC}{r}', f'=ROUND(SUM({TAXC[0]}{r}:{OTHC}{r}),2)', font=F_TOT, fmt=MONEY)
+        put(ws, f'{REVC}{r}', f'=SUMIFS({KB("Q")},{KB("C")},{co},{KB("D")},"销售出库"{bd})'
+                              f'-SUMIFS({KB("Q")},{KB("C")},{co},{KB("D")},"销售退回"{bd})'
+                              f'+SUMIFS({KC("P")},{KC("C")},{co},{KC("E")},"现销收款"{cd})'
+                              f'+SUMIFS({KC("P")},{KC("C")},{co},{KC("E")},"其他收入"{cd})',
             font=F_LINK, fmt=MONEY)
-        put(ws, f'G{r}', f'=SUMIFS({VJ},{VF},{co},{VH},"应交税费-应交附加税"{dr})'
-                         f'-SUMIFS({VI},{VF},{co},{VH},"应交税费-应交附加税"{dr})', font=F_LINK, fmt=MONEY)
-        put(ws, f'H{r}', f'=SUMIFS({VJ},{VF},{co},{VH},"应交税费-应交企业所得税"{dr})'
-                         f'-SUMIFS({VI},{VF},{co},{VH},"应交税费-应交企业所得税"{dr})', font=F_LINK, fmt=MONEY)
-        put(ws, f'I{r}', f'=IF($E{r}<0,"当月留抵 "&TEXT(-$E{r},"#,##0.00"),"")', font=F_NOTE, align=CL)
+        put(ws, f'K{r}', None, font=F_NOTE, align=CL)
         r += 1
     put(ws, f'A{r}', f'={co}', font=F_TOT, fill=FILL_TOT)
     put(ws, f'B{r}', '全年合计', font=F_TOT, fill=FILL_TOT)
-    for c in 'CDEFGH':
+    for c in TAXC + [OTHC, SUMC, REVC]:
         put(ws, f'{c}{r}', f'=SUM({c}{r0}:{c}{r-1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-    put(ws, f'I{r}', f'=IF({SH_PARAM}!$A${10+ci}="","","期末应交税费科目余额 "'
-                     f'&TEXT({tb_end(co, "应交税费")},"#,##0.00"))', font=F_TOT, fill=FILL_TOT, align=CL)
+    put(ws, f'K{r}', f'=IF(ROUND(${REVC}{r},2)=0,"本年无含税收入",'
+                     f'"全年税负率 "&TEXT(${SUMC}{r}/${REVC}{r},"0.00%")&"（实缴税费 ÷ 含税收入）")',
+        font=F_TOT, fill=FILL_CHK, align=CL)
     r += 2
 TAX_END = r
+put(ws, f'A{TAX_END}', '口径', font=F_H2, fill=FILL_HDR2)
+ws.merge_cells(f'B{TAX_END}:K{TAX_END}')
+put(ws, f'B{TAX_END}', '内账不计提应交税费，也不拆进项销项——交多少就是多少，缴的当月直接进「税金及附加」'
+                       '或「所得税费用」。想看应交未交，那是外账口径，本表不做。', font=F_NOTE, align=CL)
 page(ws, titles=f'{HR}:{HR}')
 ws.freeze_panes = f'C{TX_0}'
 
@@ -1457,7 +1437,7 @@ for i in range(EXQ_1 - EXQ_0 + 1):
         # 资金流水只取真正形成费用的三类，「发放工资 / 缴纳税费 / 还款」是付钱不是费用，
         # 计提已经在生产加工和其他分录里算过一次了，再算一次就重了
         f = ('+'.join(
-                f'SUMIFS({KC("S")},{KC("C")},{co},{KC("H")},$A{r},{KC("E")},"{t}",'
+                f'SUMIFS({KC("P")},{KC("C")},{co},{KC("H")},$A{r},{KC("E")},"{t}",'
                 f'{KC("B")},">="&{EXQ_S},{KC("B")},"<="&{EXQ_E})'
                 for t in ('费用支出', '其他支出', '支付利息'))
              + f'+SUMIFS({KD("J")},{KD("C")},{co},{KD("L")},$A{r},'
@@ -1491,13 +1471,13 @@ ws.freeze_panes = f'B{EXQ_0}'
 
 # ============================================================ 内部交易核对
 ws = wb.create_sheet(SH_IC)
-title(ws, '内部交易核对', 'J',
-      '三家之间买卖的，卖方开多少、买方入多少，必须对得上（比的是价税合计）。'
-      '农产品收购这种卖方免税、买方按 9% 计算抵扣的，价税合计一致、不含税金额不一致，属于正常。')
-IC_S, IC_E, _ = filter_band(ws, 'J')
-widths(ws, {'A':16,'B':16,'C':16,'D':16,'E':14,'F':16,'G':14,'H':16,'I':16,'J':18})
-headers(ws, HR, 1, ['卖方公司','买方公司','卖方开票价税合计','买方入账价税合计','差额',
-                    '卖方不含税收入','买方可抵进项','买方入成本金额','期末内部往来差额','结论'])
+title(ws, '内部交易核对', 'I',
+      '三家之间买卖的，卖方开多少、买方入多少必须一样——内账含税核算，两边都是同一个含税金额，'
+      '差一分都要查。右边再对一次期末内部往来（卖方应收 vs 买方应付）。')
+IC_S, IC_E, _ = filter_band(ws, 'I')
+widths(ws, {'A':16,'B':16,'C':18,'D':18,'E':14,'F':18,'G':18,'H':14,'I':24})
+headers(ws, HR, 1, ['卖方公司','买方公司','卖方开票金额（含税）','买方入账金额（含税）','购销差额',
+                    '期末卖方应收','期末买方应付','往来差额','结论'])
 pairs = [(i, j) for i in range(len(COS)) for j in range(len(COS)) if i != j]
 for n, (si, bi) in enumerate(pairs):
     r = IC_0 + n
@@ -1506,31 +1486,27 @@ for n, (si, bi) in enumerate(pairs):
     dr = f',{KB("B")},">="&{IC_S},{KB("B")},"<="&{IC_E}'
     put(ws, f'A{r}', f'={sc}', font=F_TXT)
     put(ws, f'B{r}', f'={bc}', font=F_TXT)
-    put(ws, f'C{r}', f'=SUMIFS({KB("U")},{KB("C")},{sc},{KB("E")},{bf},{KB("D")},"销售出库"{dr})'
-                     f'-SUMIFS({KB("U")},{KB("C")},{sc},{KB("E")},{bf},{KB("D")},"销售退回"{dr})',
+    put(ws, f'C{r}', f'=SUMIFS({KB("Q")},{KB("C")},{sc},{KB("E")},{bf},{KB("D")},"销售出库"{dr})'
+                     f'-SUMIFS({KB("Q")},{KB("C")},{sc},{KB("E")},{bf},{KB("D")},"销售退回"{dr})',
         font=F_LINK, fmt=MONEY)
-    put(ws, f'D{r}', f'=SUMIFS({KB("U")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购入库"{dr})'
-                     f'-SUMIFS({KB("U")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购退回"{dr})',
+    put(ws, f'D{r}', f'=SUMIFS({KB("Q")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购入库"{dr})'
+                     f'-SUMIFS({KB("Q")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购退回"{dr})',
         font=F_LINK, fmt=MONEY)
     put(ws, f'E{r}', f'=ROUND($C{r}-$D{r},2)', font=F_TOT, fmt=MONEY)
-    put(ws, f'F{r}', f'=SUMIFS({KB("S")},{KB("C")},{sc},{KB("E")},{bf},{KB("D")},"销售出库"{dr})',
-        font=F_LINK, fmt=MONEY)
-    put(ws, f'G{r}', f'=SUMIFS({KB("T")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购入库"{dr})',
-        font=F_LINK, fmt=MONEY)
-    put(ws, f'H{r}', f'=SUMIFS({KB("S")},{KB("C")},{bc},{KB("E")},{sf},{KB("D")},"采购入库"{dr})',
-        font=F_LINK, fmt=MONEY)
     ar = (f'(SUMIFS({OP_AR},{OP_CO},{sc},{OP_PT},{bf})'
           f'+SUMIFS({VI},{VF},{sc},{VH},"应收账款",{VK},{bf},{VE},"<="&{IC_E})'
           f'-SUMIFS({VJ},{VF},{sc},{VH},"应收账款",{VK},{bf},{VE},"<="&{IC_E}))')
     ap = (f'(SUMIFS({OP_AP},{OP_CO},{bc},{OP_PT},{sf})'
           f'+SUMIFS({VJ},{VF},{bc},{VH},"应付账款",{VK},{sf},{VE},"<="&{IC_E})'
           f'-SUMIFS({VI},{VF},{bc},{VH},"应付账款",{VK},{sf},{VE},"<="&{IC_E}))')
-    put(ws, f'I{r}', f'=ROUND({ar}-{ap},2)', font=F_TOT, fmt=MONEY)
-    put(ws, f'J{r}', f'=IF(AND(ROUND($C{r},2)=0,ROUND($D{r},2)=0),"本期无内部交易",'
-                     f'IF(AND(ROUND($E{r},2)=0,ROUND($I{r},2)=0),"√ 两边一致",'
+    put(ws, f'F{r}', f'={ar}', font=F_LINK, fmt=MONEY)
+    put(ws, f'G{r}', f'={ap}', font=F_LINK, fmt=MONEY)
+    put(ws, f'H{r}', f'=ROUND($F{r}-$G{r},2)', font=F_TOT, fmt=MONEY)
+    put(ws, f'I{r}', f'=IF(AND(ROUND($C{r},2)=0,ROUND($D{r},2)=0),"本期无内部交易",'
+                     f'IF(AND(ROUND($E{r},2)=0,ROUND($H{r},2)=0),"√ 两边一致",'
                      f'IF(ROUND($E{r},2)<>0,"✗ 开票与入账差 "&TEXT($E{r},"#,##0.00"),'
-                     f'"✗ 往来余额差 "&TEXT($I{r},"#,##0.00"))))', font=F_TOT, align=CL)
-    ws.conditional_formatting.add(f'J{r}', FormulaRule(formula=[f'LEFT($J{r},1)="✗"'], fill=FILL_WARN))
+                     f'"✗ 往来余额差 "&TEXT($H{r},"#,##0.00"))))', font=F_TOT, align=CL)
+    ws.conditional_formatting.add(f'I{r}', FormulaRule(formula=[f'LEFT($I{r},1)="✗"'], fill=FILL_WARN))
 IC_END = IC_0 + len(pairs) - 1
 page(ws)
 ws.freeze_panes = f'C{IC_0}'
@@ -1578,9 +1554,9 @@ CK.append(('账户余额合计 ＝ 三家货币资金', '全部',
 CK.append(('三家试算平衡（借＝贷）', '全部',
            f'=SUM({VI})', f'=SUM({VJ})', 'eq', '整本账的借贷合计'))
 CNT = [
-    ('购销流水有没有报错行', f'=SUMPRODUCT(--({SH_BUY}!$R${BY_0}:$R${BY_1}<>"OK"),--({SH_BUY}!$R${BY_0}:$R${BY_1}<>""))',
+    ('购销流水有没有报错行', f'=SUMPRODUCT(--({SH_BUY}!$P${BY_0}:$P${BY_1}<>"OK"),--({SH_BUY}!$P${BY_0}:$P${BY_1}<>""))',
      '校验列不是 OK 的行数，应为 0'),
-    ('资金流水有没有报错行', f'=SUMPRODUCT(--({SH_CASH}!$O${CS_0}:$O${CS_1}<>"OK"),--({SH_CASH}!$O${CS_0}:$O${CS_1}<>""))',
+    ('资金流水有没有报错行', f'=SUMPRODUCT(--({SH_CASH}!$N${CS_0}:$N${CS_1}<>"OK"),--({SH_CASH}!$N${CS_0}:$N${CS_1}<>""))',
      '校验列不是 OK 的行数，应为 0'),
     ('生产加工有没有报错行', f'=SUMPRODUCT(--({SH_PROD}!$P${PD_0}:$P${PD_1}<>"OK"),--({SH_PROD}!$P${PD_0}:$P${PD_1}<>""))',
      '校验列不是 OK 的行数，应为 0'),
@@ -1594,10 +1570,10 @@ CNT = [
      '商品档案＋往来单位＋资金账户，应为 0'),
     ('存货有没有负结存', f'=COUNTIF({SH_INV}!$V${GD_0}:$V${GD_1},"✗*")',
      '结存数量或金额为负的品种数，应为 0；有就是卖多了或领多了'),
-    ('内部交易两边对不对得上', f'=COUNTIF({SH_IC}!$J${IC_0}:$J${IC_END},"✗*")',
+    ('内部交易两边对不对得上', f'=COUNTIF({SH_IC}!$I${IC_0}:$I${IC_END},"✗*")',
      '开票额与入账额、往来余额对不上的对数，应为 0'),
     ('销售有没有漏结转成本', f'=COUNTIFS({SH_BUY}!$D${BY_0}:$D${BY_1},"销售出库",'
-     f'{SH_BUY}!$AA${BY_0}:$AA${BY_1},0)', '有销售但成本金额算出来是 0 的行数，一般是存货没入库'),
+     f'{SH_BUY}!$W${BY_0}:$W${BY_1},0)', '有销售但成本金额算出来是 0 的行数，一般是存货没入库'),
     ('会计科目有没有漏配报表项目', f'=COUNTIFS({SH_ACC}!$B${ACC_0}:$B${ACC_1},"<>",{SH_ACC}!$F${ACC_0}:$F${ACC_1},"")',
      '报表项目留空的科目，报表会取不到它，应为 0'),
     ('有没有账户余额透支', f'=COUNTIF({SH_ACCT}!$L${AC_0}:$L${AC_1},"✗*")', '期末余额为负的账户数，应为 0'),
@@ -1740,8 +1716,8 @@ put(ws, f'H7', f'={SH_ACCT}!$K${AC_1+2}', font=F_BIG, fill=FILL_CARD, fmt=MONEY)
 put(ws, f'G8', '账实核对', font=F_H2, fill=FILL_HDR2)
 put(ws, f'H8', f'={SH_ACCT}!$G${AC_1+5}', font=F_TOT, fill=FILL_CHK, align=CL)
 put(ws, f'G9', '内部交易', font=F_H2, fill=FILL_HDR2)
-put(ws, f'H9', f'=IF(COUNTIF({SH_IC}!$J${IC_0}:$J${IC_END},"✗*")=0,"√ 三家之间对得上",'
-               f'"✗ 有 "&COUNTIF({SH_IC}!$J${IC_0}:$J${IC_END},"✗*")&" 对对不上")',
+put(ws, f'H9', f'=IF(COUNTIF({SH_IC}!$I${IC_0}:$I${IC_END},"✗*")=0,"√ 三家之间对得上",'
+               f'"✗ 有 "&COUNTIF({SH_IC}!$I${IC_0}:$I${IC_END},"✗*")&" 对对不上")',
     font=F_TOT, fill=FILL_CHK, align=CL)
 put(ws, f'G10', '合并后收入', font=F_H2, fill=FILL_HDR2)
 put(ws, f'H10', f'={SH_MERGE}!$G${prow["一、营业收入"]}', font=F_TOT, fill=FILL_CARD, fmt=MONEY)
@@ -1764,18 +1740,20 @@ HELP = [
                  '再把上年各表的期末数抄到【期初余额】，就是新一年的账。建议每年另存一个文件。'),
  ('二、先把档案建好', ''),
  ('', '参数设置', '会计年度、附加税率、所得税率，以及「费用项目」清单（资金流水和其他分录的下拉就取这一列）。'),
- ('', '商品档案', '三家的料和成品。存货/收入/成本科目决定这个商品记到哪个科目；默认税率和计税方式会带到购销流水。'),
+ ('', '商品档案', '三家的料和成品。存货/收入/成本科目决定这个商品记到哪个科目。'
+                  '税率一列只是开票时选哪一档的提醒，内账含税核算，不参与计算。'),
  ('', '往来单位', '客户、供应商、农户，以及三家公司互相。标了「是否内部＝是」的，购销流水会认成内部交易，合并报表按它抵销。'),
  ('', '资金账户', '实际开了几个户就登几个。几家公司共用一个账号也照登，账户余额按账户算，账务按公司各记各的。'),
  ('', '期初余额', '左边科目年初余额（借贷各一列），中间存货年初数量金额，右边往来按单位拆。三块都有对账提示。'),
  ('', '会计科目表 / 记账规则', '一般不用动。要加科目就照格式加一行，「报表项目」必须用报表上已有的项目名。'
                             '要改某类业务的借贷走向，就去【记账规则】改那一行。'),
  ('三、日常录入', ''),
- ('', '购销流水', '选公司、业务类型、往来单位、商品编码，填数量单价即可。计税方式和税率自动带，个别单子直接覆盖。'
+ ('', '购销流水', '选公司、业务类型、往来单位、商品编码，填数量和**含税单价**即可，金额＝数量×单价，不拆税。'
                 '退货用「销售退回/采购退回」，数量填正数。'),
- ('', '向农户收购原木', '往来单位选那个农户，计税方式用「农产品扣除」、税率 9%，发票类型选「收购发票」。'
-                      '这时你填的单价是收购价（＝价税合计），系统按 9% 算出可抵扣进项，剩下的进原材料成本。'),
- ('', '资金流水', '收支混在一张表上按时间顺序录：收进来填「收入金额」，付出去填「支出金额」，'
+ ('', '向农户收购原木', '往来单位选那个农户，发票类型选「收购发票」，单价就填实际收购价。'
+                      '内账含税核算，收购价全额进原材料成本，不再拆 9% 进项——'
+                      '能不能抵扣是外账报税的事，内账只看实际付了多少钱。'),
+ ('', '资金流水', '收支混在一张表上按时间顺序录：收进来填「收入金额」，付出去填「支出金额」，金额都是含税实收实付数，'
                 '右边「账户余额」逐行滚出来。业务类型决定对方科目怎么走，'
                 '规则里写「@对方」的才要你自己选对方科目。收付货款记得选往来单位，'
                 '这样【往来台账】才冲得掉；「关联单号」写对应的购销流水序号，日后好核销。'),
@@ -1784,8 +1762,9 @@ HELP = [
                         '【资金账户】底下有一行「账实对账」把两边加总对上。'),
  ('', '生产加工', '一个批次号一次加工：先记「领用投入」和「加工费用」，再记「产成品入库」。'
                 '产出行不用填金额，本批投入合计会按「权重」自动分摊；一批只有一个产出，权重留空就行。'),
- ('', '其他分录', '折旧、摊销、计提工资、计提税金、结转，一借一贷。一借多贷拆成几行。'
-                '不用做「结转本年利润」——报表会自动把损益结进未分配利润，你自己再结一次会重复。'),
+ ('', '其他分录', '折旧、摊销、计提工资、计提房租，一借一贷。一借多贷拆成几行。'
+                '**税不在这里计提**——内账按实缴，交税那天在【资金流水】记一笔就行。'
+                '也不用做「结转本年利润」，报表会自动把损益结进未分配利润，你自己再结一次会重复。'),
  ('四、看报表', ''),
  ('', '按起止日期筛选', '所有汇总和查询表第 3 行都有「年度 / 起始日期 / 截止日期」。'
                       '都留空＝全部期间；只填年度＝整年；填了起止就按起止。录入表和明细表不筛选，全部显示。'),
@@ -1798,19 +1777,22 @@ HELP = [
                               '购销结转成本和生产领用都按它取价，所以它不随日期筛选变。'
                               '要看某段时间的收发存，用【收发存查询】。'),
  ('', '往来台账 / 税费台账 / 费用统计', '往来台账按公司看每家客户供应商的应收应付；'
-                                   '税费台账按月列销项进项、应纳、实缴、附加税和所得税；'
+                                   '税费台账按公司按月按税种列实缴税费和税负率；'
                                    '费用统计上半张按费用项目、下半张按会计科目。'),
  ('五、几个口径说明', ''),
- ('', '存货计价', '全年加权平均：单价＝（期初金额＋采购入库金额＋生产入库金额）÷ 对应数量。'
+ ('', '存货计价', '全年加权平均（含税口径）：单价＝（期初金额＋采购入库金额＋生产入库金额）÷ 对应数量。'
                 '不含出库，所以不会循环引用。年中看的成本是按全年均价倒推的，和逐笔移动平均会有小差异。'),
- ('', '农产品免税与计算抵扣', '农业基地公司自产的原木、艾草销售免征增值税，所以它的商品税率是 0、'
-                          '计税方式是「免税」。木业和科技向农业或农户收购，按「农产品扣除」9% 计算抵扣进项，'
-                          '剩下 91% 进成本。这就是内部交易里「卖方开票额＝买方入账额（价税合计一致）、'
-                          '但不含税金额不一致」的原因，属于正常。'),
- ('', '企业所得税', '示例按小微企业实际税负 5% 计提（年应纳税所得额 300 万以内）。'
-                  '农林牧渔项目里的林木种植所得免征企业所得税，所以农业基地公司示例中没有提所得税。'
-                  '实际按你当年的政策改【参数设置】的税率，并在【其他分录】里改计提金额。'),
- ('', '示例数据', '四张录入表里都放了示例（购销 20 条、资金 29 条、生产 36 条、其他分录 15 条），'
+ ('', '含税核算 / 实交税费', '这是内账，全部含税：卖多少钱记多少收入，进货花多少钱记多少成本，'
+                          '费用付多少记多少，一律不拆进项销项，科目表里也没有进项/销项税额。'
+                          '税走【资金流水】的「缴纳税费」——交增值税、附加税、印花税、个税进「税金及附加」，'
+                          '交企业所得税进「所得税费用」，费用项目里选具体税种，'
+                          '【税费台账】按月按税种摊开、给出全年税负率。'
+                          '内部交易两边都是同一个含税金额，所以【内部交易核对】要求分毫不差。'),
+ ('', '税率参数只是参考', '【参数设置】上的附加税率和所得税率不参与任何计算，'
+                        '只是你自己估税时的提醒。实际交了多少，就在【资金流水】记多少。'
+                        '农林牧渔里的林木种植所得免征企业所得税、自产农产品销售免征增值税，'
+                        '所以农业基地公司示例里全年税费是 0。'),
+ ('', '示例数据', '四张录入表里都放了示例（购销 20 条、资金 34 条、生产 36 条、其他分录 10 条），'
                 '专门用来现场验公式。正式用之前，把这些行整行删掉即可，'
                 '【期初余额】和【商品档案】里的示例也一并换成你自己的。'),
 ]

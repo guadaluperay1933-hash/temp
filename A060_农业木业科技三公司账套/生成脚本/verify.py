@@ -24,16 +24,16 @@ def chk_txt(name, a, want):
     if str(a).startswith(want): ok += 1; print(f'  ✓ {name}  {a}')
     else: bad += 1; print(f'  ✗ {name}   表内={a!r}  应以「{want}」开头')
 
-print('\n一、购销流水（不含税 / 税额 / 价税合计 / 结转成本）')
+print('\n一、购销流水（含税金额 / 结转成本）')
 ws = wb[D.SH_BUY]
 e = 0
 for b in M['buy']:
     r = D.BY_0 + b['r']
-    for col, key in (('S', 'net'), ('T', 'tax'), ('U', 'gross'), ('AA', 'cost')):
+    for col, key in (('Q', 'amt'), ('W', 'cost')):
         v = ws[f'{col}{r}'].value
         if abs(float(v or 0) - b[key]) > 0.02:
             e += 1; print(f'  ✗ 第{r}行 {col} 表内={v} 复算={b[key]}')
-chk('20 条购销全部列一致（差异条数）', e, 0)
+chk(f'{len(M["buy"])} 条购销含税金额与结转成本一致（差异条数）', e, 0)
 
 print('\n二、进销存台账（加权平均单价 / 结存数量 / 结存金额）')
 ws = wb[D.SH_INV]
@@ -58,18 +58,18 @@ for p in M['prod']:
         e += 1; print(f'  ✗ 第{r}行 {p["bt"]} {p["kind"]} 表内={v} 复算={p["amt"]}')
 chk('36 条生产加工记账金额一致（差异条数）', e, 0)
 
-print('\n四、资金流水（金额拆分 + 逐行账户余额）')
+print('\n四、资金流水（含税金额 + 逐行账户余额）')
 ws = wb[D.SH_CASH]
 e = 0
 run = {k: v['open'] for k, v in BANK.items()}
 for c in M['cash']:
     r = D.CS_0 + c['r']
     run[c['acct']] = R2(run[c['acct']] + c['cin'] - c['cout'])
-    for col, want in (('Q', c['gross']), ('S', c['net']), ('T', c['tax']), ('V', run[c['acct']])):
+    for col, want in (('P', c['amt']), ('S', run[c['acct']])):
         v = float(ws[f'{col}{r}'].value or 0)
         if abs(v - want) > 0.02:
             e += 1; print(f'  ✗ 第{r}行 {col} 表内={v} 复算={want}')
-chk('29 条资金流水（含实时余额）一致（差异条数）', e, 0)
+chk(f'{len(M["cash"])} 条资金流水（含实时余额）一致（差异条数）', e, 0)
 
 print('\n五、资金账户期末余额 + 账实对账')
 ws = wb[D.SH_ACCT]
@@ -141,14 +141,17 @@ for co in D.CO_NAMES:
     chk(f'{co} 所有者权益合计', ws[f'G{BSR["所有者权益合计"]}'].value, b['权益合计'])
     chk_txt(f'{co} 资产负债表平衡', ws[f'G{BSR["平衡"]}'].value, '√')
 
-print('\n九、税费台账（全年合计） / 内部交易 / 校验中心 / 首页')
+print('\n九、税费台账（实缴，全年合计） / 内部交易 / 校验中心 / 首页')
 ws = wb[D.SH_TAX]
 for ci, co in enumerate(D.CO_NAMES):
     r = 6 + ci * 14 + 12
-    chk(f'{co} 全年销项', ws[f'C{r}'].value, M['vat'][co]['out'])
-    chk(f'{co} 全年进项', ws[f'D{r}'].value, M['vat'][co]['inp'])
+    for j, t in enumerate(D.TAX_ITEMS):
+        chk(f'{co} 全年实缴 {t}', ws[f'{chr(67+j)}{r}'].value, M['tax'].get(co, {}).get(t, 0.0))
+    chk(f'{co} 全年税费合计', ws[f'I{r}'].value, sum(M['tax'].get(co, {}).values()))
+    chk(f'{co} 税费合计＝利润表税金及附加＋所得税费用', ws[f'I{r}'].value,
+        M['pl'][co].get('税金及附加', 0) + M['pl'][co].get('所得税费用', 0))
 ws = wb[D.SH_IC]
-bad_ic = sum(1 for r in range(6, 12) if str(ws[f'J{r}'].value or '').startswith('✗'))
+bad_ic = sum(1 for r in range(6, 12) if str(ws[f'I{r}'].value or '').startswith('✗'))
 chk('内部交易核对 ✗ 的对数', bad_ic, 0)
 ws = wb[D.SH_CHK]
 rows = [r for r in range(6, 60) if ws[f'B{r}'].value]
@@ -159,7 +162,7 @@ for r in rows:
         print(f'    ✗ {ws[f"B{r}"].value} / {ws[f"C{r}"].value}: {ws[f"F{r}"].value}')
 chk('校验中心未通过项数', nbad, 0)
 ws = wb[D.SH_HOME]
-chk('首页 三家营业收入合计', ws['E8'].value, sum(M['pl'][c].get('营业收入', 0) for c in D.CO_NAMES))
+chk('首页 三家含税收入合计', ws['E8'].value, sum(M['pl'][c].get('营业收入', 0) for c in D.CO_NAMES))
 chk('首页 三家净利润合计', ws['E13'].value, sum(M['pl'][c]['净利润'] for c in D.CO_NAMES))
 
 print(f'\n=========  {ok} 项一致，{bad} 项不一致  =========')

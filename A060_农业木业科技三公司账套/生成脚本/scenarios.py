@@ -39,6 +39,7 @@ def chk_txt(name, a, want='√'):
 
 PL_ROW = {'一、营业收入':6,'减：营业成本':7,'税金及附加':8,'销售费用':9,'管理费用':10,
           '研发费用':11,'财务费用':12,'三、利润总额':17,'减：所得税费用':18,'四、净利润':19}
+# 内账含税口径：营业收入/成本就是含税数，税金及附加＝当期实缴税费
 BSL_TOT, BSR_TOT, BSR_CHK = 25, 23, 25
 
 for nm, y, s_, e_, ds, de in SCEN:
@@ -112,7 +113,7 @@ for nm, y, s_, e_, ds, de in SCEN:
         chk_txt(f'合并报表 {c} 列平衡', mg[f'{c}{51}'].value)
     ic = wb[D.SH_IC]
     chk('内部交易核对 ✗ 的对数',
-        sum(1 for r in range(6, 12) if str(ic[f'J{r}'].value or '').startswith('✗')), 0)
+        sum(1 for r in range(6, 12) if str(ic[f'I{r}'].value or '').startswith('✗')), 0)
     ex = wb[D.SH_EXP]
     e5 = 0
     for r in range(7, 7 + len(D.EXPENSES)):
