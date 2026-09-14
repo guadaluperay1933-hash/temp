@@ -1686,9 +1686,11 @@ for grp, sheets in NAV:
         if c > 5:
             r += 1; c = 2
             put(ws, f'A{r}', None, font=F_TOT, fill=FILL_TOT)
-        cell = put(ws, f'{L(c)}{r}', sn, font=Font(name='微软雅黑', size=9, color='0563C1', underline='single'),
-                   fill=FILL_CARD, align=C)
-        cell.hyperlink = f"#'{sn}'!A1"
+        # 用 HYPERLINK 公式而不是超链接对象：超链接对象过一遍 LibreOffice 会被转成
+        # 指向外部文件的链接，点了跳不动；公式形式在 Excel / WPS 里都稳
+        put(ws, f'{L(c)}{r}', f'=HYPERLINK("#\'{sn}\'!A1","{sn}")',
+            font=Font(name='微软雅黑', size=9, bold=True, color='0563C1', underline='single'),
+            fill=FILL_CARD, align=C)
         c += 1
     while c <= 5:
         put(ws, f'{L(c)}{r}', None, fill=FILL_CARD); c += 1
