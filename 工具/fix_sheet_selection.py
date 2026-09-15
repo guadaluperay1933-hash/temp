@@ -27,10 +27,25 @@ def _norm(t):
     return t if t.startswith('xl/') else 'xl/' + t
 
 
+SV = r'<sheetView(?![A-Za-z])[^>]*?/?>'      # (?![A-Za-z]) 防止咬到容器标签 <sheetViews>
+BROKEN = re.compile(r'<sheetView((?:\s+[A-Za-z:]+="[^"]*")*)s>')
+
+
+def unbreak(x):
+    """把本脚本早期版本写坏的 <sheetView tabSelected="1"s> 还原成 <sheetViews>。"""
+    return BROKEN.sub('<sheetViews>', x)
+
+
 def fix(path, verbose=True):
     z = zipfile.ZipFile(path)
     parts = {n: z.read(n) for n in z.namelist() if not n.endswith('/')}
     z.close()
+    for n in list(parts):
+        if '/worksheets/' in n and n.endswith('.xml'):
+            t = parts[n].decode('utf8')
+            t2 = unbreak(t)
+            if t2 != t:
+                parts[n] = t2.encode('utf8')
 
     wb = parts['xl/workbook.xml'].decode('utf8')
     rels = parts['xl/_rels/workbook.xml.rels'].decode('utf8')
@@ -63,14 +78,14 @@ def fix(path, verbose=True):
                                        or re.match('', '')).group(0)] if False else []
     before = []
     for nm, p, _ in sheets:
-        sv = re.search(r'<sheetView[^>]*>', parts[p].decode('utf8', 'ignore'))
+        sv = re.search(SV, parts[p].decode('utf8', 'ignore'))
         if sv and 'tabSelected="1"' in sv.group(0):
             before.append(nm)
 
     changed = 0
     for i, (nm, p, _) in enumerate(sheets):
         x = parts[p].decode('utf8')
-        sv = re.search(r'<sheetView[^>]*?/?>', x)
+        sv = re.search(SV, x)
         if not sv:
             continue
         tag = sv.group(0)
