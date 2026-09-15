@@ -116,11 +116,44 @@ events, projects = [], {}
 proj_order, proj_first, short_votes = [], {}, collections.defaultdict(collections.Counter)
 raw_rows = []
 
+# ---------------------------------------------------------------- 预扫
+# 原表有 84 行「项目全称」是空的。光靠沿用上一行，会把它们全挂到上面那个项目头上 ——
+# 德誉嘉 11~16 行那六张成本票就是这么全堆到「平凉线惠丰9社」上的，
+# 结果平凉线的已收成本票虚高几十万，平双线等五个项目一分都收不到，
+# 「还差成本票」于是恰好等于管理费，看着像口径错，其实是项目挂错了。
+# 摘要冒号后面本来就点名了真项目（「华城开票到德誉佳：平双线」），
+# 所以先扫一遍建「简称 → 项目全称」对照表，空行照摘要归位。
+SHORT2PROJ_SHEET = collections.defaultdict(dict)   # 同一个简称在各表可能指不同项目，按表优先
+SHORT2PROJ_ALL   = {}
+for _sh, _mp in M.items():
+    _ws = wb[_sh]
+    for _r in range(5, _ws.max_row + 1):
+        _praw = txt(_ws, _r, _mp['proj'])
+        if not _praw: continue
+        _p = norm_proj(_praw)
+        _s = short_of(txt(_ws, _r, _mp['memo']))
+        if not _s: continue
+        SHORT2PROJ_SHEET[_sh].setdefault(_s, _p)
+        SHORT2PROJ_ALL.setdefault(_s, _p)
+_recovered = _fellback = 0
+_recover_log = []
+
 for sh, mp in M.items():
     ws = wb[sh]; unit = mp['unit']; cur_proj = ''; fb = dt.date(2026, 1, 1)
     for r in range(5, ws.max_row + 1):
         proj_raw = txt(ws, r, mp['proj'])
         memo = txt(ws, r, mp['memo'])
+        if not proj_raw and memo:
+            # 项目那一格空着：先照摘要认领，认不出来才沿用上一行
+            _s = short_of(memo)
+            _hit = SHORT2PROJ_SHEET[sh].get(_s) or SHORT2PROJ_ALL.get(_s)
+            if _hit:
+                if _hit != cur_proj:
+                    _recovered += 1
+                    _recover_log.append((sh, r, _s, cur_proj[:18], _hit[:18]))
+                cur_proj = _hit
+            else:
+                _fellback += 1
         if proj_raw:
             cur_proj = norm_proj(proj_raw)
             projects.setdefault(cur_proj, set()).add(unit)
@@ -339,6 +372,9 @@ data = dict(events=events,
             raw_rows=raw_rows)
 json.dump(data, open(OUT, 'w'), ensure_ascii=False)
 
+print(f'项目归位：照摘要认回 {_recovered} 行，认不出来沿用上一行 {_fellback} 行')
+for _x in _recover_log[:8]:
+    print('   %s!%d 「%s」 %s → %s' % _x)
 print('事件总数', len(events))
 print('按类型:', dict(collections.Counter(e['kind'] for e in events)))
 print('跨表重复标记', sum(1 for e in events if e.get('count_in') == '否'), '笔')

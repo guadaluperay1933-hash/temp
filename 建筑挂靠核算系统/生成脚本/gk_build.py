@@ -41,8 +41,6 @@ SH_SUM_U, SH_SUM_P, SH_SUM_X = '单位汇总', '项目汇总', '单位项目明�
 SH_CHAIN, SH_TAX, SH_EXP = '链条核算', '税费台账', '费用统计'
 SH_GAP, SH_CUR, SH_PRF = '发票缺口', '往来台账', '项目利润'
 SH_DIFF = '对账差异说明'
-SPLIT_ACCTS = ['泓普', '仟茂', '现金']          # 资金日记账拆分表
-SH_SPLIT = {a: f'日记账-{a}' for a in SPLIT_ACCTS}
 
 # ---------------- 业务流水列字典（改列序只动这一处，全表跟着走） ----------------
 # 录入区 A~N：摘要按需求挪到「票据类型」后面（I 列），金额/管理费率/返现率顺次右移
@@ -54,8 +52,8 @@ FC = dict(no='A', date='B', proj='C', kind='D', payer='E', payee='F', inv='G', i
           sname='T', pname='U', tier='V', cls='W', mfee='X', due='Y',
           taxsum='Z', taxref='AA', ar='AB', ap='AC', year='AD', dflag='AE', dno='AF',
           last='AG', top='AH', src='AI', srow='AJ', cnt='AK', skey='AL', ocol='AM',
-          ubel='AN')
-FLOW_LAST = FC['ubel']
+          ubel='AN', peer='AO')
+FLOW_LAST = FC['peer']
 FEE_MODES = ['扣管理费', '不扣管理费', '不回成本票']
 FEE_DV = '"' + ','.join(FEE_MODES) + '"'
 
@@ -333,6 +331,7 @@ put(ws, f'{C_["cnt"]}4', '计入汇总', font=F_HDR2, fill=FILL_HDR2)
 put(ws, f'{C_["skey"]}4', '取数键', font=F_HDR2, fill=FILL_AUTO)
 put(ws, f'{C_["ocol"]}4', '原表来源列', font=F_HDR2, fill=FILL_AUTO)
 put(ws, f'{C_["ubel"]}4', '归属单位表', font=F_HDR2, fill=FILL_AUTO)
+put(ws, f'{C_["peer"]}4', '收票方是挂靠单位', font=F_HDR2, fill=FILL_AUTO)
 
 U_D  = f'{QU}!$D${U0}:$D${U1}'          # 上游开票税率
 U_E  = f'{QU}!$E${U0}:$E${U1}'          # 我方回开票种税率
@@ -434,6 +433,13 @@ for r in range(F0, F1 + 1):
     # 取数键：归属单位#该单位第几笔 —— 8 张单位竖版明细靠它一行一行取数。
     # 用「归属单位表」而不是「来源表」：来源表只有历史行有值，你新录的行来源表是空的，
     # 用来源表当键的话新行永远不会出现在单位明细里。
+    # 这一笔销项票是不是开给另一家挂靠单位的（那样它对收票方来说就是一张成本票）。
+    # 【项目汇总】【单位项目明细】统计「已收成本票」时要用它来筛，
+    # 否则收票方条件写成 "*" 会把每一张销项票都当成本票再加一遍 —— 整整翻一倍。
+    put(ws, f'{C_["peer"]}{r}',
+        f'=IF($D{r}<>"销项开票","",'
+        f'IF({lk(f"$F{r}", U_NAME, U_TYPE)}="挂靠单位","是","否"))',
+        font=F_NOTE, fill=FILL_AUTO)
     put(ws, f'{C_["skey"]}{r}',
         f'=IF(${C_["ubel"]}{r}="","",${C_["ubel"]}{r}&"#"&'
         f'COUNTIF(${C_["ubel"]}${F0}:${C_["ubel"]}{r},${C_["ubel"]}{r}))',
@@ -563,6 +569,7 @@ ws.column_dimensions[C_['skey']].hidden = True
 ws.column_dimensions[C_['srow']].hidden = True
 ws.column_dimensions[C_['ocol']].hidden = True
 ws.column_dimensions[C_['ubel']].hidden = True
+ws.column_dimensions[C_['peer']].hidden = True
 ws.freeze_panes = 'C5'; page(ws, titles='4:4')
 FLOW_USED = imported + extra
 print(f'  ✓ 业务流水（历史 {imported} 笔 + 过账/工资/扣税 {extra} 笔 = {FLOW_USED} 笔，容量 {F1-F0+1} 行）')
@@ -634,87 +641,9 @@ ws.conditional_formatting.add(f'N{J0}:N{J1}',
 ws.auto_filter.ref = f'A4:Q{J1}'
 ws.freeze_panes = 'C5'; page(ws, titles='4:4')
 
-# ============================================================ 资金日记账 · 三张拆分表
-# 每个账户一张，谁管哪个账户就录哪一张；右边「复制到总表」接口把这张表按总表的列序排好，
-# 整块复制 → 到总表选择性粘贴「数值」即可，不会碰到总表右边的公式列。
-SJ_0, SJ_N = 5, 600
-SJ_1 = SJ_0 + SJ_N - 1
-SPLIT_SHEETS = []
-for ai, acct in enumerate(SPLIT_ACCTS):
-    nm = SH_SPLIT[acct]
-    ws = wb.create_sheet(nm)
-    title(ws, f'资金日记账 · {acct}（单账户录入表）', 'Z')
-    widths(ws, {'A':7,'B':11,'C':10,'D':11,'E':12,'F':10,'G':38,'H':13,'I':13,'J':9,'K':16,
-                'L':14,'M':14,'N':18,'O':3,
-                'P':11,'Q':10,'R':10,'S':11,'T':12,'U':10,'V':38,'W':13,'X':13,'Y':3,'Z':10})
-    put(ws, 'A2', '期初余额', font=F_H2, align=CR, border=None)
-    put(ws, 'B2', f'={QJ}!${L(3 + ai * 2)}$2', font=F_TOT, fill=FILL_CHK, fmt=MONEY)
-    put(ws, 'C2', f'期初跟总表第 2 行联动。只记【{acct}】这一个账户，左边淡黄色格子照常录，'
-                  'L 列自动滚出本账户余额。录完把右边灰色「复制到总表」整块复制，'
-                  '到【资金日记账】选择性粘贴「数值」。本表不参与任何汇总，不会重复计数。',
-        font=F_NOTE, align=CL, border=None)
-    ws.merge_cells('C2:Z2')
-    inband(ws, 'A', 'N', 3)
-    ws.merge_cells('P3:Z3')
-    put(ws, 'P3', '复制到总表 · 灰色区自动排好，不要手工改', font=F_HDR2, fill=FILL_AUTO, align=C)
-    headers(ws, 4, 1, ['序号','日期','项目编号','费用类型','往来单位','经办人','摘要','收入','支出',
-                       '工程\n回款','备注','本账户余额','校验','项目简称'])
-    headers(ws, 4, 16, ['日期','资金账户','项目编号','费用类型','往来单位','经办人','摘要','收入','支出'],
-            fill=FILL_AUTO, font=F_HDR2)
-    put(ws, 'Z4', '工程回款', font=F_HDR2, fill=FILL_AUTO)
-    for i in range(SJ_N):
-        r = SJ_0 + i
-        for c, fmt, tx in [('B', DATE, 0), ('C', None, 0), ('D', None, 0), ('E', None, 0),
-                           ('F', None, 0), ('G', None, 1), ('H', MONEY, 0), ('I', MONEY, 0),
-                           ('J', None, 0), ('K', None, 1)]:
-            put(ws, f'{c}{r}', None, font=F_IN, fill=FILL_IN, align=CL if tx else C, fmt=fmt)
-        put(ws, f'A{r}', f'=IF($B{r}="","",ROW()-{SJ_0-1})', font=F_LINK)
-        put(ws, f'L{r}', f'=IF($B{r}="","",$B$2+SUM($H${SJ_0}:$H{r})-SUM($I${SJ_0}:$I{r}))',
-            font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-        put(ws, f'M{r}',
-            f'=IF($B{r}="","",'
-            f'IF(NOT(ISNUMBER($B{r})),"日期格式不对",'
-            f'IF(AND(N($H{r})=0,N($I{r})=0),"收支都为空",'
-            f'IF(AND(N($H{r})>0,N($I{r})>0),"收支不能同时填",'
-            f'IF(AND($C{r}<>"",ISNA(MATCH($C{r},{P_CODE},0))),"项目编号不存在",'
-            f'IF(AND($J{r}="是",$E{r}=""),"工程回款必须填往来单位","√"))))))',
-            font=F_TXT, fill=FILL_CHK)
-        put(ws, f'N{r}', f'=IF($C{r}="","",IFERROR(INDEX({P_SN},MATCH($C{r},{P_CODE},0)),"⚠编号不存在"))',
-            font=F_LINK, fill=FILL_AUTO, align=CL)
-        # 接口区：按总表 B~J 的列序排好
-        put(ws, f'P{r}', f'=IF($B{r}="","",$B{r})', font=F_LINK, fill=FILL_AUTO, fmt=DATE)
-        put(ws, f'Q{r}', f'=IF($B{r}="","","{acct}")', font=F_LINK, fill=FILL_AUTO)
-        for tgt, srcc in (('R', 'C'), ('S', 'D'), ('T', 'E'), ('U', 'F'), ('V', 'G')):
-            put(ws, f'{tgt}{r}', f'=IF($B{r}="","",${srcc}{r})', font=F_LINK, fill=FILL_AUTO,
-                align=CL if tgt == 'V' else C)
-        put(ws, f'W{r}', f'=IF($B{r}="","",IF(N($H{r})=0,"",N($H{r})))',
-            font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-        put(ws, f'X{r}', f'=IF($B{r}="","",IF(N($I{r})=0,"",N($I{r})))',
-            font=F_LINK, fill=FILL_AUTO, fmt=MONEY)
-        put(ws, f'Z{r}', f'=IF($B{r}="","",$J{r})', font=F_LINK, fill=FILL_AUTO)
-        ws.row_dimensions[r].height = 16
-    put(ws, f'A{SJ_1+2}',
-        f'怎么用：① 左边淡黄色格子照常录【{acct}】的收支；② 选中 P{SJ_0}:X{SJ_1} 整块复制 → '
-        f'打开【资金日记账】→ 点到第一行空白行的 B 列 → 右键「选择性粘贴 → 数值」；'
-        f'③ 如果有工程回款要标记，再把 Z{SJ_0}:Z{SJ_1} 复制粘到总表 M 列对应位置。'
-        '④ 粘完在总表上核对一眼「校验」列全是 √ 就完事。'
-        '注意：本表不参与任何汇总，【费用统计】【项目利润】等一律只认总表，所以不会重复算。',
-        font=F_NOTE, align=CL, border=None)
-    ws.merge_cells(f'A{SJ_1+2}:Z{SJ_1+2}')
-    dv_list(ws, f'C{SJ_0}:C{SJ_1}', f'={P_CODE}')
-    dv_list(ws, f'D{SJ_0}:D{SJ_1}', '"' + ','.join(ETYPES) + '"')
-    dv_list(ws, f'E{SJ_0}:E{SJ_1}', f'={U_NAME}')
-    dv_list(ws, f'J{SJ_0}:J{SJ_1}', '"是,否"')
-    dv_num(ws, f'H{SJ_0}:H{SJ_1}'); dv_num(ws, f'I{SJ_0}:I{SJ_1}')
-    ws.conditional_formatting.add(f'M{SJ_0}:M{SJ_1}',
-        FormulaRule(formula=[f'AND($M{SJ_0}<>"",$M{SJ_0}<>"√")'],
-                    fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
-    ws.column_dimensions['O'].width = 3
-    ws.column_dimensions['Y'].width = 3
-    ws.freeze_panes = 'C5'; page(ws, titles='4:4')
-    ws.print_area = f'$A$1:$N${SJ_1}'
-    SPLIT_SHEETS.append(nm)
-print(f'  ✓ 资金日记账拆分表：{"、".join(SPLIT_SHEETS)}（各 {SJ_N} 行，带复制到总表的接口区）')
+# 注：资金日记账不再在本册里分账户拆表。出纳用单独的《出纳资金日记账.xlsx》登记，
+# 列序跟本册【资金日记账】完全一致，录完整块复制回来选择性粘贴「数值」即可。
+# 那本册子由 build_jour.py 生成。
 
 # ============================================================ 取数公式（带起止日期）
 FB = FRNG('date')          # 日期
@@ -725,25 +654,39 @@ FFLAG = FRNG('feeflag')    # 是否扣管理费
 FV = FRNG('vat'); FW = FRNG('add')
 FX = FRNG('stamp'); FY = FRNG('inc'); FZ = FRNG('taxsum')
 FAA = FRNG('ar'); FAB = FRNG('ap')
+FPEER = FRNG('peer')
+FUBEL = FRNG('ubel')
+FOCOL = FRNG('ocol')
 def agg(val, side, kind, uref, pref=None, dr=None, cls=None, last=False, top=False,
-        fee=None, src=None):
+        fee=None, src=None, peer=None, ocol=None):
     """side: 'E' 开票/付款方  'F' 收票/收款方  None 不限；dr=(起,止) 加日期区间；
        last=True 只取链条末层的销项票（我方该直接回成本票的那一层）；
        top=True 只取直接开给业主的那一层（这个工程的收入口径）；
        fee='扣管理费'/'不扣管理费' 按这一笔到底扣没扣管理费再筛一道；
-       src=来源表 只取原对账明细某一张表来的行"""
+       src=来源表 只取原对账明细某一张表来的行；
+       peer=True 只取「收票方也是挂靠单位」的销项票；
+       ocol='销售开票金额'/'已开成本票' 按这一笔在原对账明细里落在哪一列筛"""
+    # side='U' 走「归属单位表」——这一笔算在哪家单位的对账表上。
+    # 8 张单位竖版明细用的就是这个口径，汇总表也一律跟它走，三张表才对得上。
     ex = ''
-    if side: ex += f',{KE if side == "E" else KF},{uref}'
+    if side == 'U':   ex += f',{FUBEL},{uref}'
+    elif side:        ex += f',{KE if side == "E" else KF},{uref}'
     if pref: ex += f',{KC},{pref}'
     if cls:  ex += f',{KQ},"{cls}"'
     if last: ex += f',{FAH},1'
     if top:  ex += f',{FTOP},1'
     if fee:  ex += f',{FFLAG},"{fee}"'
     if src:  ex += f',{FSRC},{src}'
+    if peer: ex += f',{FPEER},"是"'
+    if ocol: ex += f',{FOCOL},"{ocol}"'
     if dr:   ex += f',{FB},">="&{dr[0]},{FB},"<="&{dr[1]}'
-    return f'SUMIFS({val},{KD},"{kind}"{ex},{KZ},"是")'
+    # 按「归属单位表」取数时不再加跨表去重那道筛子：每张原表各算各的，
+    # 一张票在对方表里也出现，是原表本来就有的重复。【对账差异说明】和
+    # 8 张单位明细都是这么算的，汇总表必须跟它们一个口径，否则三张表对不上。
+    tail = '' if side == 'U' else f',{KZ},"是"'
+    return f'SUMIFS({val},{KD},"{kind}"{ex}{tail})'
 
-COLS_U = ['开票额\n(该单位开出)','应扣管理费','应到成本票','其中·扣了\n管理费的','其中·没扣\n管理费的',
+COLS_U = ['开票额\n(该单位开出)','应扣管理费','应到成本票','其中·按净额\n(开票额−管理费)','其中·按全额\n(不扣管理费)',
           '已收成本票','还差成本票','应提税费','已交税','欠税未交',
           '业主已付给\n挂靠单位','业主未付','挂靠单位\n已转我方','挂靠单位\n代收未转','管理费\n已结算','扣质保金']
 SUM_LAST = L(2 + len(COLS_U))          # 最后一个金额列 = R
@@ -751,12 +694,18 @@ BIZ = L(3 + len(COLS_U))               # 有无业务 = S
 
 def summary_formulas(uref, pref=None, dr=None):
     g = lambda v, s, k, **kw: agg(v, s, k, uref, pref, dr, **kw)
-    return [g(FI,'E','销项开票'), g(FR,'E','销项开票'), g(FS,'E','销项开票'),
-            g(FS,'E','销项开票', fee='扣管理费'), g(FS,'E','销项开票', fee='不扣管理费'),
-            g(FI,'F','成本票') + '+' + g(FI,'F','销项开票'),
-            None, g(FZ,'E','销项开票'), g(FI,'E','已交税'), None,
-            g(FI,'F','挂靠代收'), None, g(FI,'E','我方收款'), None,
-            g(FI,'F','管理费结算'), g(FI,'E','扣质保金')]
+    # 一律按「归属单位表」取数，跟 8 张单位竖版明细、【对账差异说明】完全同一个口径。
+    # 开票额只认原表「销售开票金额」那一列，已收成本票只认「已开成本票」那一列 ——
+    # 原来把「收票方是本单位的销项票」也算进已收成本票，会跟对方表里同一张票撞成两笔。
+    return [g(FI,'U','销项开票', ocol='销售开票金额'),
+            g(FR,'U','销项开票'), g(FS,'U','销项开票'),
+            g(FS,'U','销项开票', fee='扣管理费'), g(FS,'U','销项开票', fee='不扣管理费'),
+            f'SUMIFS({FI},{FUBEL},{uref},{FOCOL},"已开成本票"' +
+            (f',{KC},{pref}' if pref else '') +
+            (f',{FB},">="&{dr[0]},{FB},"<="&{dr[1]}' if dr else '') + ')',
+            None, g(FZ,'U','销项开票'), g(FI,'U','已交税'), None,
+            g(FI,'U','挂靠代收'), None, g(FI,'U','我方收款'), None,
+            g(FI,'U','管理费结算'), g(FI,'U','扣质保金')]
 
 def totals_row(ws, cols, r0, r1, row=TR, first_lab='合  计'):
     put(ws, f'A{row}', first_lab, font=F_TOT, fill=FILL_TOT)
@@ -1782,7 +1731,8 @@ NAV2 = [
                       '【往来台账】③ 按项目算出「扣完税费后还该转给别人多少」。'),
  ('交税', '【业务流水】选「已交税」记实际交的；该提多少税在开票那一行右边「税费录入区」四列按实际填。'),
  ('日常收付款', '【资金日记账】三个账户混着录，跨年度继续往下录就行，余额自动算。'
-             '想一个账户一个账户分开录的，用【日记账-泓普】【日记账-仟茂】【日记账-现金】三张拆分表，'
+             '出纳那边用单独发的《出纳资金日记账.xlsx》登记，列序和这张表一模一样，'
+             '录完整块复制回来、在这张表上选择性粘贴「数值」就行。'
              '录完把右边接口区整块复制、选择性粘贴数值到总表。'),
  ('要看结果', '【单位汇总】【项目汇总】【项目利润】【链条核算】【发票缺口】【往来台账】【税费台账】【费用统计】'
              '上面都有「年度 / 起止日期」，填了就只统计那一段。给领导看某一家，直接打印那家的单位专表。'),
@@ -1834,7 +1784,9 @@ DOC = [
                   '③ 不回成本票 —— 合伙方内部分成、根本不用我方回票，应开成本票＝0。'
                   '以前「费率填 0」和「忘了填」长得一模一样，现在分得清了，忘选会在校验列提示。'),
  ('应到成本票拆两列', '【项目汇总】【单位汇总】的「应到成本票」右边跟着两列：'
-                    '「其中·扣了管理费的」和「其中·没扣管理费的」，只过票不收费那部分一眼看得见，'
+                    '「其中·按净额(开票额−管理费)」和「其中·按全额(不扣管理费)」—— '
+                    '后一列说的是：这笔的应到成本票直接照开票额算，管理费另外结，不从成本票里扣。'
+                    '只过票不收费的那部分也归在这一列，一眼看得见，'
                     '不用再一笔笔翻。没扣管理费那一列大于 0 会标黄。'),
  ('税费也改成按实际录', '【业务流水】右边「税费录入区」四列（预提增值税 / 附加 / 印花 / 所得）改成手工填，'
                       '历史行按你原表逐笔写死。以前是按【单位档案】「一家单位一个税率」推算的，'
@@ -1899,11 +1851,12 @@ DOC = [
              '重名的自动带上第一次出现的那家单位，比如「平双线(德誉嘉)」「平双线(华城)」。'
              '业务流水和所有汇总表显示的都是简称，不再刷屏显示几十个字的全称。'
              '项目档案的行序＝项目在原对账明细里第一次出现的先后，对原表可以一行对一行往下走。'),
- ('日记账拆分表', '【日记账-泓普】【日记账-仟茂】【日记账-现金】三张单账户录入表，'
-                '谁管哪个账户就录哪一张，左边照常填、L 列自动滚本账户余额。'
-                '录完把右边灰色的「复制到总表」整块复制，到【资金日记账】里选择性粘贴「数值」：'
-                '主块 9 列粘到总表 B 列那一格，右边单独那列「工程回款」粘到总表 M 列。'
-                '拆分表只是录入草稿，所有汇总一律只认总表，不会重复算。'),
+ ('出纳日记账怎么回流', '出纳用单独的《出纳资金日记账.xlsx》登记，那本册子的列序和本册【资金日记账】'
+                '完全一致（B 日期 / C 资金账户 / D 项目编号 / E 费用类型 / F 往来单位 / G 经办人 / '
+                'H 摘要 / I 收入 / J 支出 / M 工程回款）。'
+                '出纳录完，选中 B 列到 J 列加 M 列整块复制，回到本册【资金日记账】第一行空白行，'
+                '右键「选择性粘贴 → 数值」。粘完看一眼「校验」列全是 √ 就完事。'
+                '本册所有汇总只认【资金日记账】这一张，出纳那本不参与任何计算，不会重复算。'),
  ('钱在谁手上', None),
  ('三个状态', '业主还没付 →【单位汇总】的「业主未付」；业主付了但挂靠单位压着 →「挂靠单位代收未转」；'
              '已经到我们账上 →「挂靠单位已转我方」。逐笔看【代收台账】。'),
@@ -1934,10 +1887,9 @@ TABC = {SH_HOME2:'1F3864', SH_DOC:'1F3864', SH_UNIT:'7F7F7F', SH_PROJ:'7F7F7F',
         SH_SUM_X:'548235', SH_CHAIN:'548235', SH_GAP:'7030A0', SH_CUR:'7030A0', SH_PRF:'BF8F00',
         SH_TAX:'548235', SH_EXP:'2F5597'}
 for n in SUB_SHEETS: TABC[n] = 'A9D08E'
-for n in SPLIT_SHEETS: TABC[n] = 'F4B183'
 TABC[SH_DIFF] = 'C00000'
 for n, c in TABC.items(): wb[n].sheet_properties.tabColor = c
-ORDER2 = ([SH_HOME2, SH_DOC, SH_UNIT, SH_PROJ, SH_FLOW, SH_JOUR] + SPLIT_SHEETS +
+ORDER2 = ([SH_HOME2, SH_DOC, SH_UNIT, SH_PROJ, SH_FLOW, SH_JOUR] +
           [SH_SUM_U, SH_SUM_P, SH_PRF, SH_SUM_X] + SUB_SHEETS +
           [SH_CHAIN, SH_GAP, SH_CUR, SH_TAX, SH_DAI, SH_EXP, SH_DIFF])
 wb._sheets = [wb[n] for n in ORDER2]; wb.active = 0

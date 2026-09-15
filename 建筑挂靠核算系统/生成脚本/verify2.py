@@ -75,37 +75,41 @@ rowof = {}
 for r in range(7, 47):
     u = ws.cell(row=r, column=1).value
     if u: rowof[u] = r
+# 单位汇总现在跟 8 张明细、【对账差异说明】一个口径：按「归属单位表」
+# （历史行＝这一笔来自原对账明细的哪一张表），不再按开票方/收票方。
+# 所以这里的期望值和下面 ② 那段用的是同一套算法 —— 两张表必须完全相等。
+def belong(u):
+    return [x for x in rows if x['src'] == u]
+
 for u in HOLD:
     r = rowof[u]
-    sale = lambda p: (lambda x: x['kind'] == '销项开票' and x['payer'] == u and p(x))
-    chk(f'单位汇总·{u}·开票额', S(lambda x: x['kind'] == '销项开票' and x['payer'] == u),
-        ws.cell(row=r, column=COLS['开票额']).value)
-    chk(f'单位汇总·{u}·应扣管理费',
-        S(lambda x: x['kind'] == '销项开票' and x['payer'] == u, 'mfee'),
-        ws.cell(row=r, column=COLS['应扣管理费']).value)
-    chk(f'单位汇总·{u}·应到成本票',
-        S(lambda x: x['kind'] == '销项开票' and x['payer'] == u, 'due'),
-        ws.cell(row=r, column=COLS['应到成本票']).value)
+    mine = belong(u)
+    g = lambda c: ws.cell(row=r, column=COLS[c]).value
+    chk(f'单位汇总·{u}·开票额',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '销项开票' and x['ocol'] != '已开成本票')), g('开票额'))
+    chk(f'单位汇总·{u}·应扣管理费', R2(sum(x['mfee'] for x in mine)), g('应扣管理费'))
+    chk(f'单位汇总·{u}·应到成本票', R2(sum(x['due'] for x in mine)), g('应到成本票'))
     chk(f'单位汇总·{u}·扣费的',
-        S(lambda x: x['kind'] == '销项开票' and x['payer'] == u and x['fee'] == '扣管理费', 'due'),
-        ws.cell(row=r, column=COLS['扣费的']).value)
+        R2(sum(x['due'] for x in mine if x['fee'] == '扣管理费')), g('扣费的'))
     chk(f'单位汇总·{u}·不扣费的',
-        S(lambda x: x['kind'] == '销项开票' and x['payer'] == u and x['fee'] == '不扣管理费', 'due'),
-        ws.cell(row=r, column=COLS['不扣费的']).value)
+        R2(sum(x['due'] for x in mine if x['fee'] == '不扣管理费')), g('不扣费的'))
     chk(f'单位汇总·{u}·已收成本票',
-        S(lambda x: x['kind'] in ('成本票', '销项开票') and x['payee'] == u),
-        ws.cell(row=r, column=COLS['已收成本票']).value)
-    chk(f'单位汇总·{u}·应提税费', R2(sum(x['taxsum'] for x in V if x['src'] == u)),
-        ws.cell(row=r, column=COLS['应提税费']).value)
+        R2(sum(x['amt'] for x in mine if x['ocol'] == '已开成本票')), g('已收成本票'))
+    chk(f'单位汇总·{u}·应提税费', R2(sum(x['taxsum'] for x in mine)), g('应提税费'))
     chk(f'单位汇总·{u}·已交税',
-        R2(sum(x['amt'] for x in V if x['kind'] == '已交税' and x['src'] == u)),
-        ws.cell(row=r, column=COLS['已交税']).value)
-    chk(f'单位汇总·{u}·业主已付', S(lambda x: x['kind'] == '挂靠代收' and x['payee'] == u),
-        ws.cell(row=r, column=COLS['业主已付']).value)
-    chk(f'单位汇总·{u}·已转我方', S(lambda x: x['kind'] == '我方收款' and x['payer'] == u),
-        ws.cell(row=r, column=COLS['已转我方']).value)
-    chk(f'单位汇总·{u}·管理费已结算', S(lambda x: x['kind'] == '管理费结算' and x['payee'] == u),
-        ws.cell(row=r, column=COLS['管理费已结算']).value)
+        R2(sum(x['amt'] for x in mine if x['kind'] == '已交税')), g('已交税'))
+    chk(f'单位汇总·{u}·业主已付',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '挂靠代收')), g('业主已付'))
+    chk(f'单位汇总·{u}·已转我方',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '我方收款')), g('已转我方'))
+    chk(f'单位汇总·{u}·管理费已结算',
+        R2(sum(x['amt'] for x in mine if x['kind'] == '管理费结算')), g('管理费已结算'))
+    # 需求3：这一行必须和这家的竖版明细期间合计一模一样
+    d = wb[f'{u}明细']
+    chk(f'单位汇总{u} = {u}明细·开票额',     float(d['H7'].value or 0), g('开票额'))
+    chk(f'单位汇总{u} = {u}明细·应扣管理费', float(d['I7'].value or 0), g('应扣管理费'))
+    chk(f'单位汇总{u} = {u}明细·应到成本票', float(d['J7'].value or 0), g('应到成本票'))
+    chk(f'单位汇总{u} = {u}明细·已收成本票', float(d['K7'].value or 0), g('已收成本票'))
 
 # ---------- ② 8 张单位竖版明细的期间合计 ----------
 for u in HOLD:
@@ -136,11 +140,19 @@ for i, p in enumerate(PROJ_ORDER):
     code = f'A{i+1:03d}'
     r = 7 + i
     assert ws.cell(row=r, column=1).value == code, (r, code, ws.cell(row=r, column=1).value)
-    chk(f'项目汇总·{code}·开票额', S(lambda x: x['kind'] == '销项开票' and x['proj'] == code),
+    # 开票额只认原表「销售开票金额」那一列 —— 从「已开成本票」列还原出来的那些行
+    # 虽然也记成销项开票（是别家开给本单位的票），但它们不是本项目的销售额。
+    mine = [x for x in rows if x['proj'] == code and x['src'] in HOLD]
+    chk(f'项目汇总·{code}·开票额',
+        R2(sum(x['amt'] for x in mine
+               if x['kind'] == '销项开票' and x['ocol'] != '已开成本票')),
         ws.cell(row=r, column=3).value)
     chk(f'项目汇总·{code}·应到成本票',
-        S(lambda x: x['kind'] == '销项开票' and x['proj'] == code, 'due'),
+        R2(sum(x['due'] for x in mine if x['kind'] == '销项开票')),
         ws.cell(row=r, column=5).value)
+    chk(f'项目汇总·{code}·已收成本票',
+        R2(sum(x['amt'] for x in mine if x['ocol'] == '已开成本票')),
+        ws.cell(row=r, column=8).value)
 
 # ---------- ④ 税费台账 ----------
 ws = wb['税费台账']
