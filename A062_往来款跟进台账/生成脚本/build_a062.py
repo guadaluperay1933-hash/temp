@@ -86,6 +86,12 @@ MANUAL = {                     # 手工录入的格子：淡黄底 + 深蓝字
 }
 for r in range(F0, F1 + 1):
     D, N_ = f'$D{r}', f'$N{r}'
+    # 「这一行有没有应收业务 / 应付业务」。只填了客户名、没填金额的花名册行不算：
+    # 原表 I18:I46 一连印 29 个 3920 就是因为只看客户名，这里不能重蹈覆辙。
+    HAS_R = f'OR($F{r}<>"",$J{r}<>"",$T{r}<>"")'
+    HAS_P = f'OR($O{r}<>"",$X{r}<>"")'
+    GR = f'IF(OR({D}="",NOT({HAS_R})),""'
+    GP = f'IF(OR({N_}="",NOT({HAS_P})),""'
 
     # —— 序号：跳过空行也不会乱；MAX 碰到表头文字算 0，所以第 11 行自然是 1
     put(ws, f'A{r}', f'=IF(AND({D}="",{N_}=""),"",MAX($A$10:A{r-1})+1)',
@@ -102,32 +108,32 @@ for r in range(F0, F1 + 1):
     if r in bak_paid: ws[f'X{r}'].value = bak_paid[r]
 
     # —— 隐藏的算料列
-    put(ws, f'U{r}', f'=IF({D}="","",ROUND(N($F{r})-N($J{r}),2))', fmt=NUM)
-    put(ws, f'V{r}', f'=IF({D}="","",ROUND(SUMIFS($F${F0}:F{r},$D${F0}:D{r},{D})'
+    put(ws, f'U{r}', f'={GR},ROUND(N($F{r})-N($J{r}),2))', fmt=NUM)
+    put(ws, f'V{r}', f'={GR},ROUND(SUMIFS($F${F0}:F{r},$D${F0}:D{r},{D})'
                      f'-SUMIFS($J${F0}:J{r},$D${F0}:D{r},{D}),2))', fmt=NUM)
-    put(ws, f'W{r}', f'=IF({D}="","",ROUND(SUMIFS({SJ_IN},{SJ_CUST},{D}),2))', fmt=NUM)
-    put(ws, f'Y{r}', f'=IF({N_}="","",ROUND(SUMIFS($O${F0}:O{r},$N${F0}:N{r},{N_}),2))', fmt=NUM)
-    put(ws, f'Z{r}', f'=IF({N_}="","",ROUND(SUMIFS({SJ_OUT},{SJ_SUPP},{N_}),2))', fmt=NUM)
+    put(ws, f'W{r}', f'={GR},ROUND(SUMIFS({SJ_IN},{SJ_CUST},{D}),2))', fmt=NUM)
+    put(ws, f'Y{r}', f'={GP},ROUND(SUMIFS($O${F0}:O{r},$N${F0}:N{r},{N_}),2))', fmt=NUM)
+    put(ws, f'Z{r}', f'={GP},ROUND(SUMIFS({SJ_OUT},{SJ_SUPP},{N_}),2))', fmt=NUM)
 
     # —— 已收款：数据录入里记了这个客户的回款就按回款先来后到分摊；
     #    还没记的，就沿用 T 列那个手工数，免得你原来的账一夜之间全变 0。
     put(ws, f'G{r}',
-        f'=IF({D}="","",IF(COUNTIF({SJ_CUST},{D})=0,N($T{r}),'
+        f'={GR},IF(COUNTIF({SJ_CUST},{D})=0,N($T{r}),'
         f'ROUND(MIN(MAX(0,N($W{r})-(N($V{r})-N($U{r}))),N($U{r})),2)))',
         font=F_AUTO, fill=FILL_AUTO, fmt=NUM, align=CL)
-    put(ws, f'H{r}', f'=IF({D}="","",ROUND(N($F{r})-N($G{r})-N($J{r}),2))',
+    put(ws, f'H{r}', f'={GR},ROUND(N($F{r})-N($G{r})-N($J{r}),2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY, align=CL)
     # 未收总计：直接对 H 列求和，不再一环扣一环，中间空一行也断不了
-    put(ws, f'I{r}', f'=IF({D}="","",ROUND(SUM($H${F0}:H{r}),2))',
+    put(ws, f'I{r}', f'={GR},ROUND(SUM($H${F0}:H{r}),2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=NUM, align=CL)
 
     put(ws, f'P{r}',
-        f'=IF({N_}="","",IF(COUNTIF({SJ_SUPP},{N_})=0,N($X{r}),'
+        f'={GP},IF(COUNTIF({SJ_SUPP},{N_})=0,N($X{r}),'
         f'ROUND(MIN(MAX(0,N($Z{r})-(N($Y{r})-N($O{r}))),N($O{r})),2)))',
         font=F_AUTO0, fill=FILL_AUTO, fmt=NUM, align=CL)
-    put(ws, f'Q{r}', f'=IF({N_}="","",ROUND(N($O{r})-N($P{r}),2))',
+    put(ws, f'Q{r}', f'={GP},ROUND(N($O{r})-N($P{r}),2))',
         font=F_AUTO0, fill=FILL_AUTO, fmt=NUM, align=CL)
-    put(ws, f'R{r}', f'=IF({N_}="","",ROUND(SUM($Q${F0}:Q{r}),2))',
+    put(ws, f'R{r}', f'={GP},ROUND(SUM($Q${F0}:Q{r}),2))',
         font=F_AUTO0, fill=FILL_AUTO, fmt=MONEY, align=CL)
 
     put(ws, f'AA{r}',
@@ -189,8 +195,10 @@ for sqref, src in ((f'D{F0}:D{F1}', f'{JC}!$E:$E'),
                    (f'E{F0}:E{F1}', f'{JC}!$B:$B'),
                    (f'K{F0}:K{F1}', f'{JC}!$A:$A'),
                    (f'N{F0}:N{F1}', f'{JC}!$G:$G')):
-    dv = DataValidation(type='list', formula1=src, allow_blank=True, showDropDown=False)
-    dv.error = '请从下拉里选；要加新的先去【基础资料】那张表加一行。'
+    dv = DataValidation(type='list', formula1=src, allow_blank=True, showDropDown=False,
+                        errorStyle='warning')
+    dv.error = ('这个名字不在【基础资料】清单里。要是新客户 / 新产品，'
+                '点「是」照样能填，回头去基础资料补一行就行。')
     dv.errorTitle = '不在基础资料清单里'
     ws.add_data_validation(dv); dv.add(sqref)
 
@@ -280,12 +288,20 @@ def block(h_row, r0, r1, kind):
             font=F_AUTO, fill=FILL_AUTO, fmt=NUM, align=CL)
         who = '客户' if is_c else '供货商'
         act = '回款' if is_c else '付款'
+        # 提示要说清楚是「哪一边少了」，不能一律怪【数据录入】。
+        # 丁爱妹就是反例：数据录入里有她 2000 元收入，往来款跟进里却没给她开过单。
+        src_t = '往来款跟进' if is_c else '往来款跟进'
         put(rc, f'J{r}',
             f'=IF({nm}="","",'
             f'IF(AND(N($E{r})=0,N($G{r})=0),"没有往来",'
-            f'IF(ROUND(N($I{r}),2)<>0,"差 "&TEXT(N($I{r}),"0.00")&" 元：'
-            f'【数据录入】里这个{who}的{act}还没记全，或者没选{who}名",'
-            f'IF(N($H{r})>0,"还欠 "&TEXT(N($H{r}),"0.00")&" 元","已结清"))))',
+            f'IF(AND(N($E{r})=0,N($G{r})<>0),'
+            f'"【{src_t}】里还没给这个{who}开过单，但【数据录入】已经{act} "'
+            f'&TEXT(N($G{r}),"0.00")&" 元",'
+            f'IF(AND(N($G{r})=0,N($E{r})<>0),'
+            f'"【数据录入】里还没记这个{who}的{act}（或者没选{who}名）；'
+            f'左边这些数暂时按原来手工填的算",'
+            f'IF(ROUND(N($I{r}),2)<>0,"两边差 "&TEXT(N($I{r}),"0.00")&" 元，要查",'
+            f'IF(N($H{r})>0,"还欠 "&TEXT(N($H{r}),"0.00")&" 元","已结清"))))))',
             font=F_T0, fill=FILL_CHK, fmt='General', align=CLW)
         rc.row_dimensions[r].height = 18
 
@@ -298,7 +314,8 @@ def block(h_row, r0, r1, kind):
             font=F_SUM, fill=FILL_SUM, fmt=MONEY, align=CL)
     put(rc, f'J{tr}', None, fill=FILL_SUM)
     rc.conditional_formatting.add(f'A{r0}:J{r1}',
-        FormulaRule(formula=[f'AND($B{r0}<>"",ROUND($I{r0},2)<>0)'], fill=FILL_WARN))
+        FormulaRule(formula=[f'AND($B{r0}<>"",N($E{r0})<>0,N($G{r0})<>0,'
+                             f'ROUND($I{r0},2)<>0)'], fill=FILL_WARN))
     return tr
 
 block(CUST_H, CUST_0, CUST_N, '客户')
@@ -374,6 +391,10 @@ for i, (lab, f, note) in enumerate(UNMATCHED):
     rc.row_dimensions[r].height = 20
 
 wb.save(OUT)
+# openpyxl 不认识动态数组的 metadata，存盘会连 xl/metadata.xml 带 6 个 cm="1" 一起扔掉。
+# 那 5 张账户分表的 FILTER() 一旦丢了这个标记就退化成只剩 2 行的老式数组 —— 必须补回去。
+from repair_parts import repair
+repair(OUT, SRC)
 print('已保存', os.path.abspath(OUT))
 nf = sum(1 for s in wb.worksheets for row in s.iter_rows()
          for c in row if isinstance(c.value, str) and c.value.startswith('='))
