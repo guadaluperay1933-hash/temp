@@ -135,10 +135,11 @@ for r in range(F0, F1 + 1):
         f'IF(AND({D}<>"",COUNTIF({JC}!$E:$E,{D})=0),"客户名不在基础资料里",'
         f'IF(AND($E{r}<>"",COUNTIF({JC}!$B:$B,$E{r})=0),"产品名不在基础资料里",'
         f'IF(AND({N_}<>"",COUNTIF({JC}!$G:$G,{N_})=0),"供货商不在基础资料里",'
+        f'IF(AND($C{r}<>"",ISNUMBER($C{r}),$C{r}<10000),"客户生日填得不对（不是日期）",'
         f'IF(N($J{r})>N($F{r}),"销售费用大于销售金额",'
         f'IF(AND({D}<>"",COUNTIF({SJ_CUST},{D})=0,N($T{r})<>0),"用的还是原手工已收款",'
         f'IF(AND({D}<>"",COUNTIF({SJ_CUST},{D})>0,ROUND(N($G{r})-N($T{r}),2)<>0,N($T{r})<>0),'
-        f'"自动算的已收款和原手工数对不上","√")))))))',
+        f'"自动算的已收款和原手工数对不上","√"))))))))',
         font=F_T0, fill=FILL_CHK, fmt='General', align=CLW)
     ws.row_dimensions[r].height = max(ws.row_dimensions[r].height or 0, 18) or 18
 
@@ -334,8 +335,13 @@ print(f'  【数据录入】补齐 账户余额公式 {fixed_h} 行、序号公�
 # 日期和生日的显示格式：原表 B 列是美式 mm-dd-yy，C 列生日是 General（生日显示成 46113）
 for r in range(F0, F1 + 1):
     ws.cell(r, 2).number_format = 'yyyy/mm/dd'          # B 日期
-    ws.cell(r, 3).number_format = 'm"月"d"日"'           # C 客户生日
     ws.cell(r, 13).number_format = 'yyyy/mm/dd'         # M 应付日期
+    # 生日只给「像日期」的格子套日期格式。C45 原来填的是数字 10，
+    # 套上日期格式会显示成 1900-01-10，看着像个正经日期反而更糟，
+    # 这种留着原样，让最右边的核对列去提醒。
+    bd = ws.cell(r, 3).value
+    if isinstance(bd, (int, float)) and bd >= 10000:
+        ws.cell(r, 3).number_format = 'm"月"d"日"'
 
 # ---------------------------------------------------------------- ⑧
 # 「无主」提示：数据录入里有钱进出、但没挂客户名/供应商名的，

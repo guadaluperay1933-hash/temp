@@ -32,13 +32,20 @@ o = openpyxl.load_workbook(SRC_ORIG, data_only=True)['往来款跟进']
 print('=== ① 原表手工录入的格子一个都不能变 ===')
 # 用户手工填的列：B日期 C生日 D客户 E产品 F销售金额 J销售费用 K支付方式 L备注
 #                 M日期 N供货商 O购货款 S备注
+import datetime as _dt
+_EP = _dt.datetime(1899, 12, 30)
+def _ser(v):
+    """套了日期格式的格子读回来是 datetime，要换算回序列值才比得了"""
+    if isinstance(v, _dt.datetime): return (v - _EP).days
+    if isinstance(v, _dt.date):     return (_dt.datetime(v.year, v.month, v.day) - _EP).days
+    return v
 for col in (2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 19):
     L = openpyxl.utils.get_column_letter(col)
     diff = 0
     for r in range(11, 511):
-        a, b = o.cell(r, col).value, g.cell(r, col).value
+        a, b = _ser(o.cell(r, col).value), _ser(g.cell(r, col).value)
         if a is None and b is None: continue
-        if isinstance(a, float) and isinstance(b, float):
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
             if abs(a - b) > 0.005: diff += 1
         elif a != b:
             diff += 1
