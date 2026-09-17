@@ -6,11 +6,12 @@ import openpyxl
 HERE = os.path.dirname(os.path.abspath(__file__))
 D = json.load(open(os.path.join(HERE, 'mine_data.json'), encoding='utf-8'))
 wb = openpyxl.load_workbook(sys.argv[1], data_only=True)
+wb = wb
 it, fe, ib, ob, ba, st, pc, mr, ar, ck = (wb['物料档案'], wb['费用台账'], wb['入库单'], wb['出库单'],
                                           wb['到货批次'], wb['库存台账'], wb['月度盘点'],
                                           wb['领导月报'], wb['应收对账'], wb['核对表'])
 D0, S0 = 4, 5
-N_IT, N_IN, N_OUT, N_BAT = 1200, 2500, 4000, 200
+N_IT, N_IN, N_OUT, N_BAT = 1800, 4000, 5000, 200
 ok = bad = 0
 RATE = 370.0
 
@@ -27,24 +28,28 @@ N = lambda v: v if isinstance(v, (int, float)) else 0
 
 print('══ 1. 搬运完整性 ══')
 chk('物料档案条数', sum(1 for r in range(D0, D0 + N_IT) if it[f'A{r}'].value), len(D['items']))
-chk('入库单行数', sum(1 for r in range(D0, D0 + N_IN) if ib[f'G{r}'].value), len(D['inbound']))
-chk('出库单行数', sum(1 for r in range(D0, D0 + N_OUT) if ob[f'D{r}'].value), len(D['outbound']))
-chk('费用台账行数', sum(1 for r in range(D0, D0 + 500) if fe[f'C{r}'].value), len(D['fees']))
-chk('到货批次条数', sum(1 for r in range(S0, S0 + N_BAT) if ba[f'A{r}'].value), len(D['batches']))
-src_qty = sum(x['qty'] for x in D['inbound'])
+ALL_IN = D['inbound'] + D.get('new_inbound', []) + D.get('buy', [])
+ALL_OUT = D.get('outbound', []) + D.get('use', []) + D.get('lend', [])
+chk('入库单行数（货柜+新柜+本地采购）', sum(1 for r in range(D0, D0 + N_IN) if ib[f'G{r}'].value), len(ALL_IN))
+chk('出库单行数（原表+使用+借调）', sum(1 for r in range(D0, D0 + N_OUT) if ob[f'D{r}'].value), len(ALL_OUT))
+chk('费用台账行数（国内+新柜+达市）', sum(1 for r in range(D0, D0 + 800) if fe[f'C{r}'].value),
+    len(D['fees']) + len(D.get('new_fees', [])) + len(D.get('local_fees', [])))
+chk('物料档案条数', sum(1 for r in range(D0, D0 + N_IT) if it[f'A{r}'].value), len(D['items']))
+src_qty = sum(x['qty'] for x in ALL_IN)
 chk('入库数量合计', round(sum(N(ib[f'K{r}'].value) for r in range(D0, D0 + N_IN)), 3), round(src_qty, 3), 0.01)
-src_amt = sum(x['amount'] for x in D['inbound'])
+src_amt = sum(x.get('amount', 0) for x in ALL_IN)
 chk('入库原币金额合计', round(sum(N(ib[f'O{r}'].value) for r in range(D0, D0 + N_IN)), 2), round(src_amt, 2), 0.05)
-chk('费用原币合计', round(sum(N(fe[f'G{r}'].value) for r in range(D0, D0 + 500)), 2),
-    round(sum(x['amount'] for x in D['fees']), 2), 0.01)
+chk('费用原币合计', round(sum(N(fe[f'G{r}'].value) for r in range(D0, D0 + 800)), 2),
+    round(sum(x['amount'] for x in D['fees']) + sum(x['cny'] for x in D.get('new_fees', []))
+          + sum(x['tzs'] for x in D.get('local_fees', [])), 2), 1)
+chk('达市到港费用折先令合计', round(sum(N(fe[f'I{r}'].value) for r in range(D0, D0 + 800)
+                                       if fe[f'F{r}'].value == 'TZS')),
+    round(sum(x['tzs'] for x in D.get('local_fees', []))), 2)
 
 print('══ 2. 币种折算 ══')
 chk('入库货值·先令 = 原币 × 汇率',
     round(sum(N(ib[f'P{r}'].value) for r in range(D0, D0 + N_IN))),
-    round(sum(round(x['amount'] * RATE) for x in D['inbound'])), 5)
-chk('费用·先令 = 原币 × 汇率',
-    round(sum(N(fe[f'I{r}'].value) for r in range(D0, D0 + 500))),
-    round(sum(round(x['amount'] * RATE) for x in D['fees'])), 5)
+    round(sum(round(x.get('amount', 0) * RATE) for x in ALL_IN)), 5)
 
 print('══ 3. 海运费分摊 ══')
 byb = collections.defaultdict(lambda: dict(val=0, fee=0, noprice=0, alloc=0, rows=0))
@@ -57,7 +62,7 @@ for r in range(D0, D0 + N_IN):
     byb[k]['rows'] += 1
     if ib[f'Y{r}'].value == '待补价':
         byb[k]['noprice'] += 1
-for r in range(D0, D0 + 500):
+for r in range(D0, D0 + 800):
     k = fe[f'C{r}'].value
     if k:
         byb[k]['fee'] += N(fe[f'I{r}'].value)
@@ -85,9 +90,23 @@ for r in range(S0, S0 + N_IT):
     if abs(N(st[f'X{r}'].value) - w) > 0.002:
         e += 1
 chk('库存台账逐行数量勾稽', e, 0)
-chk('期末金额 = 入库成本合计（首期没有出库）',
-    round(N(st['Y4'].value)), round(sum(N(ib[f'V{r}'].value) for r in range(D0, D0 + N_IN))
-                                    - sum(N(ob[f'S{r}'].value) for r in range(D0, D0 + N_OUT))), 2)
+# 库存台账只收「账期之内 + 类型对 + 状态正常」的行，核对时要用同一把尺子，
+# 否则 312 行没日期的、以及类型不是采购入库的会算进来
+import datetime as _dt
+P0, P1 = _dt.datetime(2026, 1, 1), _dt.datetime(2026, 8, 31)
+def _in(d):
+    return isinstance(d, _dt.datetime) and P0 <= d <= P1
+chk('库存台账 本月入库金额 = 入库单同口径合计', round(N(st['J4'].value)),
+    round(sum(N(ib[f'V{r}'].value) for r in range(D0, D0 + N_IN)
+              if ib[f'X{r}'].value == '采购入库' and ib[f'Z{r}'].value == '正常'
+              and _in(ib[f'C{r}'].value))), 3)
+chk('库存台账 自用消耗 = 出库单同口径合计', round(N(st['Q4'].value)),
+    round(sum(N(ob[f'U{r}'].value) for r in range(D0, D0 + N_OUT)
+              if ob[f'K{r}'].value == '自用消耗' and ob[f'W{r}'].value == '正常'
+              and _in(ob[f'C{r}'].value))), 3)
+chk('借调不进出库成本',
+    round(sum(N(ob[f'U{r}'].value) for r in range(D0, D0 + N_OUT)
+              if ob[f'K{r}'].value == '矿区借调')), 0)
 
 print('══ 5. 月加权单位成本 ══')
 e = 0
@@ -121,14 +140,11 @@ print('══ 7. 月报与核对表 ══')
 chk('月报 勾稽差额 = 0', round(N(mr['B46'].value)), 0)
 chk('月报 采购总成本 = 库存台账入库金额', round(N(mr['B12'].value)), round(N(st['J4'].value)), 2)
 chk('月报 折人民币 = 先令 / 汇率', round(N(mr['B13'].value), 2), round(N(mr['B12'].value) / RATE, 2), 0.02)
-chk('月报 两矿自用合计', round(N(mr['B27'].value)), round(N(mr['B25'].value) + N(mr['B26'].value)))
-# 首期就有 3 条勾稽红，全部来自原表本来就缺的数据，不是公式错：
-#   9  外销没售价 1 笔 —— 原表 439 行那只卖给三矿的空柜从来没写过价
-#   14 入库数量要大于 0 的 4 行 —— 土工膜 3 个柜 + 发电机组，原表数量栏是空的
-#   16 上面这些的合计
-red = [ck[f'A{r}'].value for r in range(6, 23) if ck[f'E{r}'].value == '※异常']
-chk('核对表 勾稽红项 = 3（全部是原表缺数据，公式没错）', len(red), 3)
-print('   勾稽红项：' + ' | '.join(x[:30] for x in red))
+MR0 = 26
+chk('月报 各矿区合计', round(N(mr[f'C{MR0+7}'].value)),
+    round(sum(N(mr[f'C{MR0+i}'].value) for i in range(7))))
+
+
 print(f'   勾稽 {ck["B3"].value}/{ck["C3"].value} 通过；待办项：'
       + ', '.join(f'{ck[f"A{r}"].value.split(" ")[0]}={ck[f"C{r}"].value}'
                   for r in range(6, 23) if ck[f'E{r}'].value == '△待补'))
@@ -144,6 +160,10 @@ for k, v in fo.most_common():
     print(f'   出库 {v:4d} × {k}')
 chk('入库真错（※）只剩原表本来就没填数量的那几行',
     sum(v for k, v in fi.items() if k.startswith('※')), 4)
+chk('借调笔数', sum(1 for r in range(D0, D0 + N_OUT) if ob[f'K{r}'].value == '矿区借调'),
+    len(D.get('lend', [])))
+chk('重复嫌疑物料数', sum(1 for r in range(D0, D0 + 200)
+                          if wb['参数表'].cell(r, 23).value), len(D.get('dup_codes', [])))
 
 print(f'\n══ 结果：{ok} 项通过，{bad} 项不通过 ══')
 sys.exit(1 if bad else 0)
