@@ -16,7 +16,7 @@
   这一句在库存台账、月报、核对表三处用的是同一个式子。
 · 售价：国内货 = 人民币进价 × 2 × 汇率（不含运费）；当地货 = 先令进价 × 1.03。
 """
-import json, os, datetime, collections
+import json, os, sys, datetime, collections
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -433,7 +433,7 @@ for r in range(D0, O_END + 1):
         f'IF(AND($K{r}="{OUTK[1]}",$V{r}<>"",$V{r}<0),"※这一笔外销是亏的，请核对售价",'
         f'IF(IFERROR(VLOOKUP($D{r},库存台账!$A${S0}:$Y${S0+N_ITEM-1},24,0),0)<-0.001,'
         f'"※这个物料账面已经变成负数了，查一下是不是漏记入库",'
-        f'IF($C{r}="","△这一笔没填日期，不会进任何月份的报表","")))))))))))))')
+        f'IF($C{r}="","△这一笔没填日期，不会进任何月份的报表",""))))))))))))))')
 for i, x in enumerate(DATA.get('outbound', [])):
     r = D0 + i
     for c, v in ((3, datetime.datetime.strptime(x['date'], '%Y-%m-%d') if x['date'] else None),
@@ -1102,3 +1102,10 @@ print('工作表:', ' / '.join(s.title for s in wb.worksheets))
 n = sum(1 for s in wb.worksheets for row in s.iter_rows()
         for c in row if isinstance(c.value, str) and c.value.startswith('='))
 print('公式格子 %d 个' % n)
+
+# 括号少写一个，openpyxl 照存，Excel 打开却会把那一格**静默清空**，重算也查不出来
+sys.path.insert(0, os.path.join(os.path.dirname(ROOT), '工具'))
+import check_formula, fix_sheet_selection              # noqa: E402
+fix_sheet_selection.fix(OUT)     # 一张表都没选中的话 WPS 会判成「工作组」，改一处等于改所有表
+if check_formula.scan(OUT):
+    raise SystemExit('公式括号不配对，先修了再交付')

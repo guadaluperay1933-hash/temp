@@ -23,6 +23,7 @@ ROOT = os.path.dirname(HERE)
 SRC = os.path.join(ROOT, '参考', '原_典当登记表.xlsx')
 OUT = os.path.join(ROOT, 'A061_典当登记表.xlsx')
 FUND_FILE = 'A061_资金台账.xlsx'
+FUND_SHEETS = ['数据录入']        # 跨簿链接要先报一遍对方有哪几张表
 
 N2, N1 = 400, 120            # 表2 / 表1 的行数上限
 D0 = 4                       # 数据从第 4 行开始（1 标题 2 汇总 3 表头）
@@ -42,6 +43,23 @@ BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CEN = Alignment('center', 'center', wrap_text=True)
 LEFT = Alignment('left', 'center')
 MONEY, DATEF, RATE = '#,##0.00', 'yyyy-mm-dd', '0.000'
+# 自动区（FILTER 铺出来的）专用日期格式：正数按日期画，0 一律不显示。
+# FILTER 碰到源表空格子会返回 0，普通 yyyy-mm-dd 会把 0 画成「1900-01-00」。
+DATEQ = 'yyyy-mm-dd;;;@'
+
+
+def nb(rng):
+    """把 FILTER 的取数区先过一道 IF(区域="","",区域)。
+
+    FILTER 直接取原区域时，源表里**空着**的格子会被当成 0 带过来：
+    日期列显示 1900-01-00，金额列显示 0.00，文字列显示 0。
+    先过一道 IF 把空格子换成空文本，整块就干净了。"""
+    return f'IF({rng}="","",{rng})'
+
+
+def q(fmt):
+    """自动区里的日期一律换成「0 不显示」的格式。"""
+    return DATEQ if fmt == DATEF else fmt
 
 INST = ['金辉典当', '明道典当', '个人典当']
 GOODS = ['房产', '车子', '车位', '黄金', '包包', '手表', '名品', '无抵押借款', '钻戒',
@@ -228,7 +246,7 @@ for r in range(D0, E2 + 1):
         f'IF(N($M{r})>N($L{r}),"※已还本金大于典当金额",'
         f'IF(AND($I{r}<>"",$J{r}<>"",$J{r}<$I{r}),"※到期日早于当票日期",'
         f'IF(AND($H{r}<>"",COUNTIF($H${D0}:$H${E2},$H{r})>1),"※当票号在本表里出现了不止一次",'
-        f'IF(AND($L{r}<>"",$E{r}=""),"※有金额没写客户","")))))')
+        f'IF(AND($L{r}<>"",$E{r}=""),"※有金额没写客户","")))))))')
 for i, x in enumerate(t2):
     r = D0 + i
     for c, v in ((2, x['inst']), (3, x['goods']), (4, x['status']), (5, x['name']),
@@ -276,7 +294,7 @@ for r in range(D0, E1 + 1):
         f'IF(AND($C{r}<>"",ISNA(MATCH($C{r},状态表,0))),"※状态不在【资料】里",'
         f'IF(AND($G{r}<>"",$H{r}<>"",$H{r}<$G{r}),"※到期日早于当票日期",'
         f'IF(AND($F{r}<>"",COUNTIF($F${D0}:$F${E1},$F{r})>1),"※当票号在本表里出现了不止一次",'
-        f'IF(AND(N($U{r})>0,N($T{r})=0),"※填了实际付息日但没填应付息日","")))')
+        f'IF(AND(N($U{r})>0,N($T{r})=0),"※填了实际付息日但没填应付息日","")))))')
 for i, x in enumerate(t1):
     r = D0 + i
     for c, v in ((2, x['goods']), (3, x['status']), (4, x['name']), (5, x['phone']), (6, x['ticket']),
@@ -325,7 +343,7 @@ for inst in INST:
         ws.column_dimensions[c2_].width = 14
     ws[f'A{D0}'] = ArrayFormula(
         ref=f'A{D0}:{SUB_LAST}{D0 + SUB_ROWS - 1}',
-        text=f'=_xlfn._xlws.FILTER(表2客户典当登记!$A${D0}:${SUB_LAST}${E2},'
+        text=f'=_xlfn._xlws.FILTER({nb(f"表2客户典当登记!$A${D0}:${SUB_LAST}${E2}")},'
              f'表2客户典当登记!$B${D0}:$B${E2}=$B$2,"这个机构还没有记录")')
     for r in range(D0, D0 + SUB_ROWS):
         for i in range(1, len(COLS2) + 1):
@@ -333,13 +351,13 @@ for inst in INST:
             c.border, c.font, c.fill = BOX, FT_AUTO, F_AUTO
             c.alignment = CEN
             if COLS2[i - 1][3]:
-                c.number_format = COLS2[i - 1][3]
+                c.number_format = q(COLS2[i - 1][3])
             ws.column_dimensions[CL(i)].width = COLS2[i - 1][1]
     ws.freeze_panes = f'A{D0}'
 
 # ── 查询表 ───────────────────────────────────────────────────────────
 QW = 18
-ws = newsheet('查询表', '查询表 · 输入客户姓名，一次看全他的典当和资金往来',
+ws = newsheet('查询表', '查询表（旧版·竖着排，保留备用）· 输入客户姓名，一次看全他的典当和资金往来',
               '最下面那块「资金收付流水」是从《A061_资金台账.xlsx》取的，'
               '查的时候两个文件要同时打开（Excel 读不了关着的工作簿，这是规矩不是设置问题）。', C_Q, QW)
 put(ws, 'A3', '客户姓名 →', font=Font(name='微软雅黑', size=11, bold=True), fill=F_SUM, align=CEN)
@@ -379,11 +397,11 @@ for j, (lab, f, fmt) in enumerate(SUMBAR):
 
 BLOCKS = [
     ('一、典当记录（来自【表2客户典当登记】·所有机构）', 8, COLS2[:18], 40, 'R',
-     f'=_xlfn._xlws.FILTER(表2客户典当登记!$A${D0}:$R${E2},'
+     f'=_xlfn._xlws.FILTER({nb(f"表2客户典当登记!$A${D0}:$R${E2}")},'
      f'表2客户典当登记!$E${D0}:$E${E2}=$B$3,"这个客户在表2里没有典当记录")',
      f'=COUNTIF(表2客户典当登记!$E${D0}:$E${E2},$B$3)'),
     ('二、不动产记录（来自【表1不动产登记】·就是上面金辉典当那几笔的收款明细，别跟上面相加）', 52, COLS1[:13], 20, 'M',
-     f'=_xlfn._xlws.FILTER(表1不动产登记!$A${D0}:$M${E1},'
+     f'=_xlfn._xlws.FILTER({nb(f"表1不动产登记!$A${D0}:$M${E1}")},'
      f'表1不动产登记!$D${D0}:$D${E1}=$B$3,"这个客户在表1里没有不动产记录")',
      f'=COUNTIF(表1不动产登记!$D${D0}:$D${E1},$B$3)'),
     ('三、资金收付流水（来自《A061_资金台账.xlsx》的「数据录入」，要同时打开那个文件）', 76,
@@ -392,7 +410,7 @@ BLOCKS = [
       ('收入', 13, 'auto', MONEY), ('支出', 13, 'auto', MONEY), ('账户余额', 13, 'auto', MONEY),
       ('客户', 12, 'auto', None), ('供应商', 12, 'auto', None), ('月份', 10, 'auto', '0')],
      80, 'K',
-     f'=_xlfn._xlws.FILTER([1]数据录入!$A$19:$K$5078,[1]数据录入!$I$19:$I$5078=$B$3,'
+     f'=_xlfn._xlws.FILTER({nb("[1]数据录入!$A$19:$K$5078")},[1]数据录入!$I$19:$I$5078=$B$3,'
      f'"这个客户在资金台账里没有流水，或者《A061_资金台账.xlsx》没打开")',
      f'=COUNTIF([1]数据录入!$I$19:$I$5078,$B$3)'),
 ]
@@ -410,10 +428,187 @@ for title, r0, cols, nrow, lastcol, af, cntf in BLOCKS:
             c = ws.cell(r, i)
             c.border, c.font, c.fill, c.alignment = BOX, FT_AUTO, F_AUTO, CEN
             if fmt:
-                c.number_format = fmt
+                c.number_format = q(fmt)
     ws[f'A{r0+2}'] = ArrayFormula(ref=f'A{r0+2}:{lastcol}{r0+1+nrow}', text=af)
 ws.freeze_panes = 'A6'
 ws.sheet_view.showGridLines = False
+
+# ── 查询表（新）· 左右两块并排 ────────────────────────────────────────
+# 按用户发来的样子做：第 1 行输姓名（同名时再补身份证号），左边典当明细，右边资金收付。
+# 每块都不是一条大 FILTER —— 要挑的列在源表里不连号，所以按「源表里连着的段」
+# 拆成几条 FILTER 各铺各的列，这是 FILTER 只能整段取列的硬限制。
+QP, QF, QR = 40, 60, 20                  # 典当 / 资金 / 不动产 预留行数
+QN_LAST, QN_RIGHT = 'L', 'N'             # 左块最后一列 / 右块第一列
+
+# (标题, 列宽, 源表列, 数字格式)
+Q_PAWN = [('序号', 6.6, 'A', None), ('抵押机构', 12, 'B', None), ('抵押物品', 12, 'C', None),
+          ('状 态', 9, 'D', None), ('当票号', 16, 'H', None), ('出款日期', 11, 'K', DATEQ),
+          ('典当金额', 13, 'L', MONEY), ('已还本金', 12, 'M', MONEY), ('当前在当', 12, 'N', MONEY),
+          ('应收利息', 12, 'P', MONEY), ('利息日', 8, 'Q', None), ('详情/备注', 24, 'W', None)]
+Q_FUND = [('序号', 6.6, 'A', None), ('日 期', 11, 'B', DATEQ), ('公司账户', 12, 'C', None),
+          ('收/支项目类别', 13, 'D', None), ('摘  要', 30, 'E', None),
+          ('收入金额', 13, 'F', MONEY), ('支出金额', 13, 'G', MONEY)]
+Q_REAL = [('序号', 6.6, 'A', None), ('抵押物品', 12, 'B', None), ('状 态', 9, 'C', None),
+          ('当票号', 16, 'F', None), ('当票日期', 11, 'G', DATEQ), ('到期日', 11, 'H', DATEQ),
+          ('出款日期', 11, 'I', DATEQ), ('典当金额', 13, 'J', MONEY), ('应收利息', 12, 'L', MONEY),
+          ('合计收款', 12, 'S', MONEY), ('逾期天数', 8, 'V', '0'), ('应收滞纳金', 13, 'W', MONEY)]
+
+
+def runs(cols):
+    """把「输出列 → 源表列」切成若干段：源表里挨着的列才能用同一条 FILTER 取。
+
+    返回 [(输出起列号, 源起列字母, 源止列字母, 段宽), ...]"""
+    out, i = [], 0
+    while i < len(cols):
+        j = i
+        while (j + 1 < len(cols)
+               and ord(cols[j + 1][2]) == ord(cols[j][2]) + 1):
+            j += 1
+        out.append((i + 1, cols[i][2], cols[j][2], j - i + 1))
+        i = j + 1
+    return out
+
+
+qn = wb.create_sheet('查询表（新）')
+qn.sheet_properties.tabColor = C_Q
+qn.sheet_view.showGridLines = False
+for i, (t, w, sc, fmt) in enumerate(Q_PAWN, 1):
+    qn.column_dimensions[CL(i)].width = w
+qn.column_dimensions['M'].width = 2.2                     # 左右两块中间的空隙
+for i, (t, w, sc, fmt) in enumerate(Q_FUND, 14):
+    qn.column_dimensions[CL(i)].width = w
+
+# ── 第 1 行：查询条件 ─────────────────────────────────────────────────
+qn.row_dimensions[1].height = 28
+put(qn, 'A1', '客户姓名', font=Font(name='微软雅黑', size=10, bold=True), fill=F_SUM, align=CEN)
+put(qn, 'B1', names[0] if names else None,
+    font=Font(name='微软雅黑', size=13, bold=True, color='C00000'), fill=F_IN, align=CEN)
+qn.merge_cells('B1:C1')
+put(qn, 'D1', '身份证号', font=Font(name='微软雅黑', size=10, bold=True), fill=F_SUM, align=CEN)
+put(qn, 'E1', None, fmt='@', font=Font(name='微软雅黑', size=10, bold=True, color='C00000'),
+    fill=F_IN, align=CEN)
+qn.merge_cells('E1:F1')
+dv(qn, '=客户名单', 'B1')
+
+E_COL = f'表2客户典当登记!$E${D0}:$E${E2}'
+F_COL = f'表2客户典当登记!$F${D0}:$F${E2}'
+# 同名判定：这个姓名下登过几个**不一样**的身份证号。
+# 分母加 (姓名<>本人) 是为了躲开 0/0 —— 不是本人的行分母会是 0，直接 #DIV/0! 整条就废了。
+DISTINCT = (f'IFERROR(SUMPRODUCT(({E_COL}=$B$1)*({F_COL}<>"")'
+            f'/(COUNTIFS({E_COL},$B$1,{F_COL},{F_COL}&"")+({E_COL}<>$B$1))),0)')
+put(qn, 'G1',
+    f'=IF($B$1="","← 先选客户姓名。身份证号只有碰到同名客户时才要填。",'
+    f'IF($E$1<>"","已按【姓名+身份证】筛选，典当命中 "'
+    f'&COUNTIFS({E_COL},$B$1,{F_COL},$E$1)'
+    f'&" 笔。（不动产和资金台账没有身份证号这一列，那两块仍然只能按姓名查）",'
+    f'IF({DISTINCT}>1,"※这个姓名下登了 "&{DISTINCT}&" 个不同的身份证号，'
+    f'请把身份证号填到左边 E1 再查。",'
+    f'"按姓名查，典当 "&COUNTIF({E_COL},$B$1)&" 笔。"'
+    f'&IF(SUMPRODUCT(({E_COL}=$B$1)*({F_COL}<>""))=0,"（这个客户还没登身份证号，没有同名就不用管）",""))))',
+    font=Font(name='微软雅黑', size=9, color='8B5E00'),
+    fill=PatternFill('solid', fgColor='FFF7E6'), align=LEFT)
+qn.merge_cells(f'G1:{QN_LAST}1')
+put(qn, 'N1', '※ 右边这块取的是《A061_资金台账.xlsx》，查的时候那个文件要一起打开。',
+    font=Font(name='微软雅黑', size=9, color='8B5E00'),
+    fill=PatternFill('solid', fgColor='FFF7E6'), align=LEFT)
+qn.merge_cells('N1:T1')
+
+# ── 第 2 行：汇总条 ───────────────────────────────────────────────────
+def pick(one, two):
+    """没填身份证号就按姓名，填了就按姓名+身份证。"""
+    return f'IF($E$1="",{one},{two})'
+
+QSUM_L = [
+    ('典当笔数', pick(f'COUNTIF({E_COL},$B$1)',
+                      f'COUNTIFS({E_COL},$B$1,{F_COL},$E$1)'), '0'),
+    ('典当金额', 'ROUND(' + pick(
+        f'SUMIF({E_COL},$B$1,表2客户典当登记!$L${D0}:$L${E2})',
+        f'SUMIFS(表2客户典当登记!$L${D0}:$L${E2},{E_COL},$B$1,{F_COL},$E$1)') + ',2)', MONEY),
+    ('已还本金', 'ROUND(' + pick(
+        f'SUMIF({E_COL},$B$1,表2客户典当登记!$M${D0}:$M${E2})',
+        f'SUMIFS(表2客户典当登记!$M${D0}:$M${E2},{E_COL},$B$1,{F_COL},$E$1)') + ',2)', MONEY),
+    ('当前在当', 'ROUND(' + pick(
+        f'SUMIF({E_COL},$B$1,表2客户典当登记!$N${D0}:$N${E2})',
+        f'SUMIFS(表2客户典当登记!$N${D0}:$N${E2},{E_COL},$B$1,{F_COL},$E$1)') + ',2)', MONEY),
+    ('应收利息', 'ROUND(' + pick(
+        f'SUMIF({E_COL},$B$1,表2客户典当登记!$P${D0}:$P${E2})',
+        f'SUMIFS(表2客户典当登记!$P${D0}:$P${E2},{E_COL},$B$1,{F_COL},$E$1)') + ',2)', MONEY),
+    ('不动产金额', f'ROUND(SUMIF(表1不动产登记!$D${D0}:$D${E1},$B$1,'
+                  f'表1不动产登记!$J${D0}:$J${E1}),2)', MONEY),
+]
+IN_ = '[1]数据录入!'
+QSUM_R = [
+    ('资金·收到', f'IFERROR(ROUND(SUMIF({IN_}$I$19:$I$5078,$B$1,{IN_}$F$19:$F$5078)'
+                  f'+SUMIF({IN_}$J$19:$J$5078,$B$1,{IN_}$F$19:$F$5078),2),"—")', MONEY),
+    ('资金·付出', f'IFERROR(ROUND(SUMIF({IN_}$I$19:$I$5078,$B$1,{IN_}$G$19:$G$5078)'
+                  f'+SUMIF({IN_}$J$19:$J$5078,$B$1,{IN_}$G$19:$G$5078),2),"—")', MONEY),
+    ('资金笔数', f'IFERROR(COUNTIF({IN_}$I$19:$I$5078,$B$1)'
+                f'+COUNTIF({IN_}$J$19:$J$5078,$B$1),"—")', '0'),
+]
+qn.row_dimensions[2].height = 20
+for j, (lab, f, fmt) in enumerate(QSUM_L):
+    put(qn, f'{CL(1 + j * 2)}2', lab, font=Font(name='微软雅黑', size=9, bold=True, color='FFFFFF'),
+        fill=PatternFill('solid', fgColor=C_Q), align=CEN)
+    put(qn, f'{CL(2 + j * 2)}2', f'=IF($B$1="","",{f})', fmt=fmt, font=FT_SUM, fill=F_SUM, align=CEN)
+for j, (lab, f, fmt) in enumerate(QSUM_R):
+    put(qn, f'{CL(14 + j * 2)}2', lab, font=Font(name='微软雅黑', size=9, bold=True, color='FFFFFF'),
+        fill=PatternFill('solid', fgColor=C_Q), align=CEN)
+    put(qn, f'{CL(15 + j * 2)}2', f'=IF($B$1="","",{f})', fmt=fmt, font=FT_SUM, fill=F_SUM, align=CEN)
+
+# ── 三块明细 ─────────────────────────────────────────────────────────
+COND_P = f'({E_COL}=$B$1)*IF($E$1="",1,({F_COL}&"")=($E$1&""))'
+COND_R = f'表1不动产登记!$D${D0}:$D${E1}=$B$1'
+COND_F = f'(({IN_}$I$19:$I$5078=$B$1)+({IN_}$J$19:$J$5078=$B$1))>0'
+CNT_P = pick(f'COUNTIF({E_COL},$B$1)', f'COUNTIFS({E_COL},$B$1,{F_COL},$E$1)')
+CNT_R = f'COUNTIF(表1不动产登记!$D${D0}:$D${E1},$B$1)'
+CNT_F = f'COUNTIF({IN_}$I$19:$I$5078,$B$1)+COUNTIF({IN_}$J$19:$J$5078,$B$1)'
+
+def qblock(col0, r_title, cols, nrow, src, srng, cond, cnt, title, ext=False):
+    """铺一块：标题条 + 表头 + 若干条 FILTER。"""
+    c0 = col0                                   # 输出起始列号
+    last = CL(c0 + len(cols) - 1)
+    head = f'"{title}　共 "&{cnt}&" 笔"&IF({cnt}>{nrow},"　※超过预留的 {nrow} 行了，告诉我加行","")'
+    body_f = f'=IF($B$1="","{title}　← 先选客户姓名",{head})'
+    if ext:
+        body_f = (f'=IF($B$1="","{title}　← 先选客户姓名",'
+                  f'IFERROR({head},"{title}　← 取不到数：请把《{FUND_FILE}》一起打开"))')
+    put(qn, f'{CL(c0)}{r_title}', body_f,
+        font=Font(name='微软雅黑', size=10, bold=True, color='FFFFFF'),
+        fill=PatternFill('solid', fgColor=C_Q), align=LEFT)
+    qn.merge_cells(start_row=r_title, start_column=c0, end_row=r_title, end_column=c0 + len(cols) - 1)
+    qn.row_dimensions[r_title].height = 20
+    for i, (t, w, sc, fmt) in enumerate(cols, c0):
+        c = qn.cell(r_title + 1, i, t)
+        c.font, c.fill, c.alignment, c.border = FT_HDR, PatternFill('solid', fgColor=C_Q), CEN, BOX
+    qn.row_dimensions[r_title + 1].height = 28
+    r0 = r_title + 2
+    for r in range(r0, r0 + nrow):
+        for i, (t, w, sc, fmt) in enumerate(cols, c0):
+            c = qn.cell(r, i)
+            c.border, c.font, c.fill, c.alignment = BOX, FT_AUTO, F_AUTO, CEN
+            if fmt:
+                c.number_format = fmt
+    for off, a, b, wide in runs(cols):
+        rng = f'{src}${a}${srng[0]}:${b}${srng[1]}'
+        cc = CL(c0 + off - 1)
+        cc2 = CL(c0 + off - 1 + wide - 1)
+        qn[f'{cc}{r0}'] = ArrayFormula(
+            ref=f'{cc}{r0}:{cc2}{r0 + nrow - 1}',
+            text=f'=IF($B$1="","",IFERROR(_xlfn._xlws.FILTER({nb(rng)},{cond},""),""))')
+
+qblock(1, 3, Q_PAWN, QP, '表2客户典当登记!', (D0, E2), COND_P, CNT_P, '一、典当记录（表2）')
+qblock(14, 3, Q_FUND, QF, IN_, (19, 5078), COND_F, CNT_F,
+       f'二、资金收付流水（《{FUND_FILE}》数据录入）', ext=True)
+R3 = 3 + 2 + QP + 1                # 不动产排在典当块下面，跟右边的资金块并排，别拉出一大截空白
+qblock(1, R3, Q_REAL, QR, '表1不动产登记!', (D0, E1), COND_R, CNT_R,
+       '三、不动产记录（表1 · 就是上面金辉典当那几笔的收款明细，别跟上面相加）')
+# 标题条里出现 ※ 的时候（行数不够 / 资金台账没打开）整条变红，免得被当成普通提示滑过去
+for addr in ('A3', 'N3', f'A{R3}'):
+    qn.conditional_formatting.add(addr, FormulaRule(
+        formula=[f'ISNUMBER(SEARCH("※",{addr}))'],
+        fill=PatternFill('solid', fgColor='C00000'),
+        font=Font(name='微软雅黑', size=10, bold=True, color='FFFFFF')))
+qn.freeze_panes = 'A5'
 
 # ── 客户名单（静态种子 + 漏没漏的提醒）────────────────────────────────
 res = wb['资料']
@@ -445,7 +640,7 @@ def ln(r, a, b='', c=''):
     put(ws, f'C{r}', c, font=Font(name='微软雅黑', size=10), align=Alignment('left', 'center', wrap_text=True))
     ws.merge_cells(f'C{r}:D{r}')
 
-sec(3, '一、七张表，各管一段')
+sec(3, '一、八张表，各管一段')
 ln(4, '表名', '谁用', '干什么')
 for i, (a, b, c) in enumerate([
     ('资料', '管理员', '所有下拉菜单的来源：抵押机构、抵押物品、状态、付息方式、客户名单、日滞纳金率。'),
@@ -454,29 +649,36 @@ for i, (a, b, c) in enumerate([
     ('金辉典当', '看', '自动从表2拆出来，不用填。'),
     ('明道典当', '看', '同上（这次新增的机构）。'),
     ('个人典当', '看', '同上。原来叫「个人借款」，统一改成「个人典当」，跟子表名对上。'),
-    ('查询表', '查客户', '输入客户姓名，一次拉出他的典当记录、不动产记录、资金收付流水。'),
+    ('查询表（新）', '查客户', '★ 主用这张。第 1 行输姓名（同名才补身份证号），'
+                            '左边典当明细、右边资金收付并排看，下面是不动产。'),
+    ('查询表', '查客户', '旧版，三块竖着排，内容一样，保留备用。不想要可以右键删掉。'),
 ], 5):
     ln(i, a, b, c)
 
-sec(13, '二、三张子表是怎么自动拆出来的')
-ln(14, '公式', 'FILTER', '每张子表的 A4 是一条 FILTER：把表2里「抵押机构 = 本表名字」的行整块搬过来。')
-ln(15, '所以', '别在子表里打字', '子表整块是一条公式的结果，手动输入会把公式顶掉。要改去表2改。')
-ln(16, '新增机构', '两步', '① 在【资料】A 列加机构名；② 复制一张子表，把 B2 改成新机构名即可。')
+sec(14, '二、三张子表是怎么自动拆出来的')
+ln(15, '公式', 'FILTER', '每张子表的 A4 是一条 FILTER：把表2里「抵押机构 = 本表名字」的行整块搬过来。')
+ln(16, '所以', '别在子表里打字', '子表整块是一条公式的结果，手动输入会把公式顶掉。要改去表2改。')
+ln(17, '新增机构', '两步', '① 在【资料】A 列加机构名；② 复制一张子表，把 B2 改成新机构名即可。')
 
-sec(18, '三、查询表怎么用')
-ln(19, '第 1 步', '打开两个文件', '《A061_典当登记表.xlsx》和《A061_资金台账.xlsx》都要打开。')
-ln(20, '第 2 步', 'B3 选客户', 'B3 那格选（或直接打）客户姓名，下面三块和上面的汇总条全部自动跳出来。')
-ln(21, '为什么要都打开', 'Excel 的规矩', 'FILTER、SUMIF 这类公式读不了「关着的」工作簿，只能读打开着的。'
-                                      '关着的时候第三块会显示取不到数，把资金台账打开就好了。')
-ln(22, '两个文件要放一起', '同一个文件夹', '文件名一个字都不能改。从聊天里下载重名会变成「(1)」，要把括号那段删掉。')
+sec(19, '三、【查询表（新）】怎么用')
+ln(20, '第 1 步', '打开两个文件', '《A061_典当登记表.xlsx》和《A061_资金台账.xlsx》都要打开。')
+ln(21, '第 2 步', 'B1 选姓名', '第 1 行 B1 那格选（或直接打）客户姓名，三块明细和汇总条全部自动跳出来。')
+ln(22, '第 3 步（一般用不上）', 'E1 填身份证号',
+   '只有碰到同名客户才要填。B1 右边的黄条会提示：「这个姓名下登了 N 个不同的身份证号」，'
+   '看到了再去 E1 填身份证号，左边典当那块就只剩这个人的。没同名就别填。')
+ln(23, '身份证号从哪来', '表2 的 F 列', '在【表2客户典当登记】的「身份证号」列登。'
+                                      '表1 不动产和资金台账里没有这一列，那两块只能按姓名查——黄条里也写着。')
+ln(24, '为什么要都打开', 'Excel 的规矩', 'FILTER、SUMIF 这类公式读不了「关着的」工作簿，只能读打开着的。'
+                                      '关着的时候右边那块会显示「取不到数」，把资金台账打开就回来了。')
+ln(25, '两个文件要放一起', '同一个文件夹', '文件名一个字都不能改。从聊天里下载重名会变成「(1)」，要把括号那段删掉。')
 
-sec(24, '四、颜色和符号')
-ln(25, '淡黄色格子', '请填写', '这是要人填的。')
-ln(26, '灰色格子', '公式自动算', '别手动改。')
-ln(27, '※ 开头的红字', '有问题', '「核对」列会自己挑毛病：机构/状态不在名单、已还本金大于典当金额、'
-                                '到期日早于当票日期、利息跟「在当×月利率」对不上。')
+sec(27, '四、颜色和符号')
+ln(28, '淡黄色格子', '请填写', '这是要人填的。')
+ln(29, '灰色格子', '公式自动算', '别手动改。')
+ln(30, '※ 开头的红字', '有问题', '「核对」列会自己挑毛病：机构/状态不在名单、已还本金大于典当金额、'
+                                '到期日早于当票日期、当票号重复。')
 
-sec(29, '五、这次从原表搬过来的')
+sec(32, '五、这次从原表搬过来的')
 for i, t in enumerate([
     '· 表2（原 Sheet2）201 行全部搬过来，「个人借款」统一改名「个人典当」（134 笔），金辉典当 67 笔。',
     '· 表1（原 Sheet1）67 行全部搬过来。',
@@ -489,7 +691,7 @@ for i, t in enumerate([
     '　 查询表里也分成两块单独列，就是这个原因。',
     '· 「典当系统费率」这一列各行口径不一样（有的按月、有的按日），所以没拿它去反推利息对错，',
     '　 免得整屏报警。要核利息请直接看「应收利息」那一列。',
-], 30):
+], 33):
     put(ws, f'A{i}', t, font=Font(name='微软雅黑', size=9, color='595959'), align=LEFT)
     ws.merge_cells(f'A{i}:D{i}')
 ws.sheet_view.showGridLines = False
@@ -498,7 +700,21 @@ for nm, ref in NAMES.items():
     wb.defined_names[nm] = DefinedName(nm, attr_text=ref)
 # 表1 排在表2 前面，跟用户叫法一致
 wb.move_sheet('表1不动产登记', offset=-1)
+wb.move_sheet('查询表（新）', offset=-1)      # 新查询表排在旧的前面，它才是主用的
 wb.active = 0
 wb.save(OUT)
 print('已生成:', OUT)
 print('工作表:', ' / '.join(s.title for s in wb.worksheets))
+
+# ══════════════════════════════════════════════════════════════════════
+# 3  存盘后的三道收尾（openpyxl 自己做不了）
+# ══════════════════════════════════════════════════════════════════════
+sys.path.insert(0, os.path.join(os.path.dirname(ROOT), '工具'))
+import ext_link, dyn_array, fix_sheet_selection, check_formula      # noqa: E402
+
+ext_link.add(OUT, FUND_FILE, FUND_SHEETS)     # 建 [1] 跨簿链接
+dyn_array.install(OUT)                        # 补回 metadata.xml + cm="1" 动态数组标记
+fix_sheet_selection.fix(OUT)                  # 正好选中一张表，否则 WPS 判成「工作组」
+bad = check_formula.scan(OUT)                 # 括号不配对的公式，Excel 打开会静默清空
+if bad:
+    raise SystemExit('公式括号不配对 %d 条，先修了再交付' % len(bad))

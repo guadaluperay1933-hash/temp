@@ -42,7 +42,7 @@ def add(path, target_file, sheet_names, verbose=True):
     parts[f'xl/externalLinks/externalLink{idx}.xml'] = (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
         f'<externalLink xmlns="{NS}"><externalBook xmlns:r="{NSR}" r:id="rId1">'
-        f'<sheetNames count="{len(sheet_names)}">{names}</sheetNames>'
+        f'<sheetNames>{names}</sheetNames>'   # 不能加 count：ECMA-376 里 sheetNames 没这个属性
         f'<sheetDataSet>{data}</sheetDataSet>'
         f'</externalBook></externalLink>').encode('utf8')
 
