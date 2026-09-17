@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""核对《嘉禾矿业进销存系统.xlsx》。用法: python3 verify_mine.py <重算过的xlsx>"""
+"""核对《嘉禾矿业进销存系统.xlsx》。
+
+用法: python3 verify_mine.py <重算过的xlsx> [交付件xlsx]
+第二个参数给了的话，还会检查【到货批次】确实是公式生成的（不是手打的静态值）。
+"""
 import sys, os, json, collections
 import openpyxl
 
@@ -164,6 +168,60 @@ chk('借调笔数', sum(1 for r in range(D0, D0 + N_OUT) if ob[f'K{r}'].value ==
     len(D.get('lend', [])))
 chk('重复嫌疑物料数', sum(1 for r in range(D0, D0 + 200)
                           if wb['参数表'].cell(r, 23).value), len(D.get('dup_codes', [])))
+
+print('══ 9. 到货批次是公式长出来的，不是手打的 ══')
+S0, N_BAT = 5, 200
+IN_END, F_END = D0 + N_IN - 1, D0 + 800 - 1
+# 入库单 + 费用台账里到底有几个不重复的批次
+bset, border = set(), []
+for r in range(D0, IN_END + 1):
+    v = ib.cell(r, 5).value
+    if v and v not in bset:
+        bset.add(v); border.append(v)
+fee_only = []
+for r in range(D0, F_END + 1):
+    v = fe.cell(r, 3).value
+    if v and v not in bset:
+        bset.add(v); fee_only.append(v)
+got_b = [ba.cell(r, 1).value for r in range(S0, S0 + N_BAT) if ba.cell(r, 1).value]
+chk('批次行数 = 入库单+费用台账里的不重复批次数', len(got_b), len(border) + len(fee_only))
+chk('批次顺序 = 在入库单里第一次出现的顺序', got_b, border + fee_only)
+chk('入库单的「批次首现」序号连号',
+    [ib.cell(r, 30).value for r in range(D0, IN_END + 1) if ib.cell(r, 30).value],
+    list(range(1, len(border) + 1)))
+e1 = e2 = e3 = 0
+first_row = {}
+for r in range(D0, IN_END + 1):
+    v = ib.cell(r, 5).value
+    if v and v not in first_row:
+        first_row[v] = r
+for i, b in enumerate(got_b):
+    r = S0 + i
+    fr = first_row.get(b)
+    if fr:
+        if ba.cell(r, 3).value != ib.cell(fr, 3).value:
+            e1 += 1
+        if ba.cell(r, 4).value != ib.cell(fr, 4).value:
+            e2 += 1
+    want = '' if str(b).startswith('本地') else str(b).rsplit('-', 1)[0]
+    if (ba.cell(r, 2).value or '') != want:
+        e3 += 1
+chk('到港日期 = 该批次第一笔入库的日期', e1, 0)
+chk('货源自动带出来', e2, 0)
+chk('柜号从批次号里截出来（本地批次留空）', e3, 0)
+chk('只有费用没有货的批次也被捞出来了',
+    all(ba.cell(S0 + got_b.index(b), 5).value in (0, None) for b in fee_only), True)
+
+if len(sys.argv) > 2:
+    out = openpyxl.load_workbook(sys.argv[2])
+    ob2 = out['到货批次']
+    for c, nm in ((1, '批次号'), (2, '集装箱号'), (3, '到港日期'), (4, '货源')):
+        vals = [ob2.cell(r, c).value for r in range(S0, S0 + N_BAT)]
+        chk(f'{nm}列整列都是公式', all(isinstance(v, str) and v.startswith('=') for v in vals), True)
+    chk('入库单「批次首现」列是公式',
+        str(out['入库单'].cell(D0, 30).value or '').startswith('='), True)
+    chk('费用台账「批次首现」列是公式',
+        str(out['费用台账'].cell(D0, 13).value or '').startswith('='), True)
 
 print(f'\n══ 结果：{ok} 项通过，{bad} 项不通过 ══')
 sys.exit(1 if bad else 0)

@@ -34,6 +34,7 @@ HDR, D0 = 3, 4
 S0 = 5                                   # 自动表：4 行合计，5 行起数据
 
 C_IN, C_AUTO, C_BASE, C_BOSS = '2F5597', '375623', '806000', '833C00'
+DATEQ = 'yyyy-mm-dd;;;@'          # 自动区日期：0 不显示，免得画成 1900-01-00
 F_IN = PatternFill('solid', fgColor='FFFBEA')
 F_AUTO = PatternFill('solid', fgColor='F2F2F2')
 F_SUM = PatternFill('solid', fgColor='FFF2CC')
@@ -194,10 +195,27 @@ NAMES = {
 }
 ws.freeze_panes = 'A4'
 
+
+def helper_col(ws, col, r0, r1, title, memo):
+    """在正表右边挂一根辅助列：灰头灰底，一眼看出是公式用的、不能删。"""
+    idx = ws[f'{col}1'].column
+    c = ws[f'{col}{HDR}']
+    c.value, c.font, c.alignment, c.border = title, FT_HDR, CEN, BOX
+    c.fill = PatternFill('solid', fgColor='808080')
+    ws.column_dimensions[col].width = 13
+    m = ws[f'{col}{HDR - 1}']
+    m.value = memo
+    m.font, m.alignment = Font(name='微软雅黑', size=9, color='C00000'), LEFT
+    for r in range(r0, r1 + 1):
+        cc = ws.cell(r, idx)
+        cc.border, cc.font, cc.fill, cc.alignment = BOX, FT_AUTO, F_AUTO, CEN
+
 # ══════════════════════════════════════════════════════════════════════
 # 物料档案
 # ══════════════════════════════════════════════════════════════════════
 I_END = D0 + N_ITEM - 1
+F_END0 = D0 + N_FEE - 1
+IN_END = D0 + N_IN - 1
 COLS_I = [('物料编码', 11, 'in', None), ('大类 ★', 13, 'in', None), ('品名 ★', 26, 'in', None),
           ('规格型号', 26, 'in', None), ('单位 ★', 9, 'in', None),
           ('重点物资', 10, 'in', None), ('安全库存', 10, 'in', QTY),
@@ -249,7 +267,7 @@ ws.auto_filter.ref = f'A{HDR}:P{I_END}'
 # ══════════════════════════════════════════════════════════════════════
 # 费用台账
 # ══════════════════════════════════════════════════════════════════════
-F_END = D0 + N_FEE - 1
+F_END = F_END0
 COLS_F = [('序号', 7, 'auto', None), ('费用日期 ★', 12, 'in', DATEF), ('批次号 ★', 24, 'in', None),
           ('费用类型 ★', 15, 'in', None), ('供应商', 22, 'in', None),
           ('币种 ★', 9, 'in', None), ('原币金额 ★', 14, 'in', CNY),
@@ -264,6 +282,10 @@ for r in range(D0, F_END + 1):
     put(ws, f'A{r}', f'={g}COUNTA($C${D0}:$C{r}))')
     put(ws, f'H{r}', f'={g}IF($F{r}="CNY",汇率,1))')
     put(ws, f'I{r}', f'={g}ROUND(N($G{r})*N($H{r}),0))')
+    # 只给「入库单里还没有」的批次编号：费用先到、货还没到的柜子，
+    # 【到货批次】也要能看见它，不然那笔运费就挂在没人管的地方。
+    put(ws, f'M{r}', f'={g}IF(COUNTIF(入库单!$E${D0}:$E${IN_END},$C{r})>0,"",'
+                     f'IF(COUNTIF($C${D0}:$C{r},$C{r})>1,"",COUNT($M${HDR}:M{r - 1})+1)))', fmt='0')
 for i, x in enumerate(DATA['fees']):
     r = D0 + i
     cat = ('国内海运费' if '海运' in x['name'] else '报关服务费' if '服务费' in x['name']
@@ -293,6 +315,8 @@ for i, x in enumerate(DATA.get('local_fees', [])):
                  (5, 'EDAN/GALCO/港口等', ), (6, 'TZS'), (7, x['tzs']),
                  (10, '是'), (11, '正常'), (12, f"{x['cat']}　{x['note']}")):
         ws.cell(r, c).value = v
+helper_col(ws, 'M', D0, F_END, '批次首现(自动)',
+           '← 这一列是【到货批次】自动长清单用的，别删、别手填')
 dv(ws, '=费用类型表', f'D{D0}:D{F_END}')
 dv(ws, '"CNY,TZS"', f'F{D0}:F{F_END}', warn=False)
 dv(ws, '"是,否"', f'J{D0}:J{F_END}', warn=False)
@@ -303,7 +327,6 @@ ws.auto_filter.ref = f'A{HDR}:L{F_END}'
 # ══════════════════════════════════════════════════════════════════════
 # 入库单
 # ══════════════════════════════════════════════════════════════════════
-IN_END = D0 + N_IN - 1
 COLS_IN = [('序号', 7, 'auto', None), ('入库单号', 14, 'in', None), ('入库日期 ★', 12, 'in', DATEF),
            ('货源 ★', 10, 'in', None), ('批次号 ★', 24, 'in', None), ('供应商', 22, 'in', None),
            ('物料编码 ★', 11, 'in', None), ('品名', 24, 'auto', None), ('规格型号', 24, 'auto', None),
@@ -343,6 +366,10 @@ for r in range(D0, IN_END + 1):
                      f'ROUND($T{r}/$Q{r}*$R{r},0)-ROUND(($T{r}-$P{r})/$Q{r}*$R{r},0)))')
     put(ws, f'V{r}', f'={g}ROUND($P{r}+$U{r},0))')
     put(ws, f'W{r}', f'={g}IF(N($K{r})=0,0,ROUND($V{r}/$K{r},2)))')
+    # 批次首现序号：一个批次号**第一次**出现在哪一行，就在那一行编个号 1,2,3…
+    # 【到货批次】靠它自动长出批次清单，不用再手工把柜号誊一遍。
+    put(ws, f'AD{r}', f'=IF($E{r}="","",IF(COUNTIF($E${D0}:$E{r},$E{r})>1,"",'
+                      f'COUNT($AD${HDR}:AD{r - 1})+1))', fmt='0')
     put(ws, f'AC{r}', f'={g}'
         f'IF($H{r}="※编码不在物料档案里","※物料编码不在档案里",'
         f'IF(N($K{r})<=0,"※入库数量要大于 0",'
@@ -383,6 +410,8 @@ dv(ws, '=价格状态表', f'Y{D0}:Y{IN_END}', warn=False)
 dv(ws, '"正常,作废"', f'Z{D0}:Z{IN_END}', warn=False)
 dv(ws, '=人员表', f'AA{D0}:AA{IN_END}')
 redflag(ws, f'AC{D0}:AC{IN_END}'); redflag(ws, f'H{D0}:H{IN_END}')
+helper_col(ws, 'AD', D0, IN_END, '批次首现(自动)',
+           '← 这一列是【到货批次】自动长清单用的，别删、别手填')
 ws.freeze_panes = f'H{D0}'
 ws.auto_filter.ref = f'A{HDR}:AC{IN_END}'
 
@@ -474,21 +503,42 @@ ws.auto_filter.ref = f'A{HDR}:Y{O_END}'
 # 到货批次（自动，看每个柜摊得对不对）
 # ══════════════════════════════════════════════════════════════════════
 B_END = S0 + N_BAT - 1
-COLS_B = [('批次号', 26, 'auto', None), ('集装箱号', 18, 'in', None), ('到港日期', 12, 'in', DATEF),
+COLS_B = [('批次号', 26, 'auto', None), ('集装箱号', 18, 'auto', None), ('到港日期', 12, 'auto', DATEQ),
           ('货源', 10, 'auto', None), ('物料行数', 10, 'auto', '0'), ('没填单价行数', 12, 'auto', '0'),
           ('货值·先令', 16, 'auto', TZS), ('费用·先令', 15, 'auto', TZS),
           ('运费率', 10, 'auto', PCT), ('已摊运费·先令', 16, 'auto', TZS),
           ('未摊(挂账)·先令', 16, 'auto', TZS), ('入库总成本·先令', 16, 'auto', TZS),
           ('状态', 30, 'auto', None)]
-ws = newsheet('到货批次', '到货批次 · 自动，一个柜一行，看运费摊得对不对',
-              '「运费率」差得越多越说明必须按柜摊：真实数据里 TIIU4204331 柜 22.28%、'
-              'DRYU9381826 柜 5.75%，差快 4 倍，用一个统一费率去摊必错。', C_AUTO, len(COLS_B))
+ws = newsheet('到货批次', '到货批次 · 整张表都是公式，一个批次一行，不用手工登',
+              '批次清单从【入库单】自动长出来：入库单里出现一个新批次号，这里就自动多一行；'
+              '费用先到、货还没到的批次，从【费用台账】也能捞出来。柜号从批次号里截，'
+              '到港日期取这个批次第一笔入库的日期。「运费率」差得越多越说明必须按柜摊：'
+              'TIIU4204331 柜 22.28%、DRYU9381826 柜 5.75%，差快 4 倍，用统一费率去摊必错。',
+              C_AUTO, len(COLS_B))
 header(ws, COLS_B, C_AUTO); body(ws, COLS_B, S0 - 1, B_END)
+# 批次清单的两个来源：入库单（主）和费用台账（费用先到、货还没到的）
+NB_IN, NB_AD = f'入库单!$E${D0}:$E${IN_END}', f'入库单!$AD${D0}:$AD${IN_END}'
+NB_DT, NB_SRC = f'入库单!$C${D0}:$C${IN_END}', f'入库单!$D${D0}:$D${IN_END}'
+NF_BT, NF_M = f'费用台账!$C${D0}:$C${F_END}', f'费用台账!$M${D0}:$M${F_END}'
+NF_DT = f'费用台账!$B${D0}:$B${F_END}'
+put(ws, 'N2', '辅助·入库单里的批次数', font=Font(name='微软雅黑', size=9, color='C00000'), align=LEFT)
+put(ws, 'O2', f'=MAX({NB_AD})', fmt='0', font=FT_SUM, fill=F_SUM, align=CEN)
+ws.column_dimensions['N'].width = 20
+ws.column_dimensions['O'].width = 8
 for i in range(N_BAT):
     r = S0 + i
     g = f'IF($A{r}="","",'
-    put(ws, f'D{r}', f'={g}IFERROR(LOOKUP(2,1/(入库单!$E${D0}:$E${IN_END}=$A{r}),'
-                     f'入库单!$D${D0}:$D${IN_END}),""))')
+    # 批次号：先把入库单里第 i 个批次捞出来；捞不到再去费用台账接着往下捞
+    put(ws, f'A{r}', f'=IFERROR(INDEX({NB_IN},MATCH({i + 1},{NB_AD},0)),'
+                     f'IFERROR(INDEX({NF_BT},MATCH({i + 1}-$O$2,{NF_M},0)),""))')
+    put(ws, f'B{r}', f'={g}IF($D{r}="{SRC_[1]}","",IFERROR(LEFT($A{r},FIND("-",$A{r})-1),"")))')
+    # 取到的那一行日期本身是空的时候 INDEX 会返回 0，不挡住就画成 1900-01-00
+    put(ws, f'C{r}', f'={g}IF(N(IFERROR(INDEX({NB_DT},MATCH($A{r},{NB_IN},0)),'
+                     f'IFERROR(INDEX({NF_DT},MATCH($A{r},{NF_BT},0)),0)))=0,"",'
+                     f'IFERROR(INDEX({NB_DT},MATCH($A{r},{NB_IN},0)),'
+                     f'IFERROR(INDEX({NF_DT},MATCH($A{r},{NF_BT},0)),""))))', fmt=DATEQ)
+    put(ws, f'D{r}', f'={g}IFERROR(LOOKUP(2,1/({NB_IN}=$A{r}),{NB_SRC}),'
+                     f'IF(LEFT($A{r},2)="本地","{SRC_[1]}","{SRC_[0]}")))')
     put(ws, f'E{r}', f'={g}COUNTIFS(入库单!$E${D0}:$E${IN_END},$A{r},入库单!$Z${D0}:$Z${IN_END},"正常"))')
     put(ws, f'F{r}', f'={g}COUNTIFS(入库单!$E${D0}:$E${IN_END},$A{r},入库单!$Z${D0}:$Z${IN_END},"正常",'
                      f'入库单!$Y${D0}:$Y${IN_END},"待补价"))')
@@ -502,26 +552,10 @@ for i in range(N_BAT):
     put(ws, f'K{r}', f'={g}ROUND($H{r}-$J{r},0))')
     put(ws, f'L{r}', f'={g}ROUND(SUMIFS(入库单!$V${D0}:$V${IN_END},入库单!$E${D0}:$E${IN_END},$A{r},'
                      f'入库单!$Z${D0}:$Z${IN_END},"正常"),0))')
-    put(ws, f'M{r}', f'={g}IF($E{r}=0,"※这个批次号在入库单里找不到",'
+    put(ws, f'M{r}', f'={g}IF($E{r}=0,"△这个批次只有费用、还没有入库单（货还没到？）",'
                      f'IF(AND($H{r}>0,$F{r}>0),"△有 "&$F{r}&" 行没单价，运费整批挂账没摊 —— 补完价自动摊",'
-                     f'IF($H{r}=0,"△还没录运费（27 个柜里只有 2 个录了，其余的要补）",'
+                     f'IF($H{r}=0,"△这个批次还没录运费",'
                      f'IF(ABS($K{r})>1,"※摊完还差 "&TEXT($K{r},"#,##0")&" 先令，查一下","已摊平")))))')
-ALLB = []
-seen_b = set()
-for b in DATA['batches']:
-    if b['batch'] not in seen_b:
-        seen_b.add(b['batch']); ALLB.append((b['batch'], b['container'], b['date']))
-for x in DATA.get('new_inbound', []):
-    if x['batch'] not in seen_b:
-        seen_b.add(x['batch']); ALLB.append((x['batch'], x['container'], x['date']))
-for x in DATA.get('buy', []):
-    if x['batch'] not in seen_b:
-        seen_b.add(x['batch']); ALLB.append((x['batch'], '', x['date']))
-for i, (bk, ct, dt_) in enumerate(ALLB):
-    r = S0 + i
-    ws.cell(r, 1).value = bk
-    ws.cell(r, 2).value = ct or None
-    ws.cell(r, 3).value = datetime.datetime.strptime(dt_, '%Y-%m-%d') if dt_ else None
 put(ws, f'A{S0-1}', '合计', font=FT_SUM, fill=F_SUM, align=CEN)
 for c in 'EFGHJKL':
     put(ws, f'{c}{S0-1}', f'=ROUND(SUM({c}{S0}:{c}{B_END}),0)',
