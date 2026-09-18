@@ -230,6 +230,21 @@ list_block(8, [('收/支类别 ★', 15, None), ('属性 ★', 11, None)], N_CAT
 list_block(11, [('客户', 18, None)], N_CUS, '三、客户', CUSTOMERS)
 list_block(13, [('供应商', 18, None)], N_SUP, '四、供应商', SUPPLIERS)
 list_block(15, [('项目 / 部门', 15, None)], N_PRJ, '五、项目 / 部门', PROJECTS)
+# 管理年度单独一格。按月的三张报表全靠它算月份 ——
+# 原模板把 202601~202612 十二个数写死在【收支报表】表头里，一跨到 2027 年整张表归零，
+# 而【数据录入】和【任意时间段】照常出数，两边对不上还没有任何提示。
+bar(ws, 3, 17, 2, '六、参数', C_MAIN)
+hdr(ws, HDR, 17, [('参数', 14, None), ('值', 10, None)], C_MAIN)
+band(ws, B0, B0 + 3, 17, [('参数', 14, None), ('值', 10, None)])
+for i, (k, v, memo) in enumerate([
+        ('管理年度', YEAR, '按月的三张报表（月度汇报表 / 收支分类报表 / 收支报表）看哪一年，改这里'),
+        ('本位币', '人民币', '这套表是单币种的'),
+        ('', '', ''), ('', '', '')]):
+    r = B0 + i
+    ws.cell(r, 17).value, ws.cell(r, 18).value = k or None, v if v != '' else None
+    if memo:
+        put(ws, f'S{r}', memo, font=FT_TIP, align=LEFT, border=False)
+ws.column_dimensions['S'].width = 52
 dv(ws, '"收入,支出,内部转账"', f'I{B0}:I{B0 + N_CAT - 1}', stop=True)
 ws.column_dimensions['G'].width = 2.2
 ws.column_dimensions['J'].width = 2.2
@@ -245,6 +260,7 @@ NAMES.update({
     '客户表': f'基础资料!$K${B0}:$K${B0 + N_CUS - 1}',
     '供应商表': f'基础资料!$M${B0}:$M${B0 + N_SUP - 1}',
     '项目表': f'基础资料!$O${B0}:$O${B0 + N_PRJ - 1}',
+    '管理年度': f'基础资料!$R${B0}',
 })
 
 # ══════════════════════════════════════════════════════════════════════
@@ -299,12 +315,15 @@ for r in range(R0, RE_ + 1):
                      f'+SUMIFS($F${R0}:F{r},$C${R0}:C{r},$C{r})'
                      f'-SUMIFS($G${R0}:G{r},$C${R0}:C{r},$C{r}),2))',
         fmt=MONEY, font=FT_AUTO, fill=F_AUTO)
-    put(ws, f'K{r}', f'=IF($B{r}="","",--TEXT($B{r},"yyyymm"))', fmt=YM, font=FT_AUTO, fill=F_AUTO)
+    # 日期录成「2026.6.28」这种文本时 --TEXT() 会直接 #VALUE!，先挡住；核对列会点名
+    put(ws, f'K{r}', f'=IF(OR($B{r}="",NOT(ISNUMBER($B{r}))),"",--TEXT($B{r},"yyyymm"))',
+        fmt=YM, font=FT_AUTO, fill=F_AUTO)
     put(ws, f'L{r}', f'=IF($D{r}="","",IFERROR(INDEX(类别属性,MATCH($D{r},类别表,0)),""))',
         font=FT_AUTO, fill=F_AUTO)
     put(ws, f'P{r}', f'={g}'
         f'IF(ISNA(MATCH($C{r},账户表,0)),"※这个账户不在【基础资料】的账户档案里",'
         f'IF($B{r}="","※没填日期，这一笔不会进任何月份的报表",'
+        f'IF(NOT(ISNUMBER($B{r})),"※日期是文本不是日期（像 2026.6.28 这种），按日期取数的报表全会漏掉这一笔",'
         f'IF(AND($F{r}<>"",$G{r}<>""),"※收入和支出不能同时填",'
         f'IF(AND(N($F{r})=0,N($G{r})=0),"※收入和支出都没填",'
         f'IF(OR(N($F{r})<0,N($G{r})<0),"※金额不能填负数，方向反了就换一列填",'
@@ -313,7 +332,8 @@ for r in range(R0, RE_ + 1):
         f'IF(AND($L{r}="内部转账",$M{r}=""),"△内部转账要在「对方账户」写上另一头",'
         f'IF(AND($L{r}="内部转账",$M{r}=$C{r}),"※对方账户跟本账户是同一个",'
         f'IF(AND($L{r}<>"内部转账",$M{r}<>""),"△填了对方账户，但类别不是内部转账",'
-        f'IF($H{r}<0,"△这一笔之后该账户余额成负数了，核一下",""))))))))))))',
+        f'IF(YEAR($B{r})<>管理年度,"△不是管理年度的单据，按月的三张报表里看不到",'
+        f'IF($H{r}<0,"△这一笔之后该账户余额成负数了，核一下",""))))))))))))))',
         font=FT_AUTO, fill=F_AUTO, align=LEFT)
 for i, f in enumerate(FLOWS):
     r = R0 + i
@@ -503,8 +523,8 @@ ws.freeze_panes = 'C8'
 NAMES['日报期末合计'] = f'汇报表!${C_END}${ATOT}'
 
 
-def MN(m): return f'{YEAR}{m:02d}'
-def MEOM(m): return f'EOMONTH(DATE({YEAR},{m},1),0)'
+def MN(m): return f'(管理年度*100+{m})'
+def MEOM(m): return f'EOMONTH(DATE(管理年度,{m},1),0)'
 
 
 NOTT = '流水属性,"<>内部转账"'
@@ -525,7 +545,7 @@ hdr(ws, 4, 1, MCOL, C_RPT)
 band(ws, 5, 16, 1, MCOL, auto=True)
 for m in range(1, 13):
     r = 4 + m
-    put(ws, f'A{r}', f'=DATE({YEAR},{m},1)', fmt='yyyy年m月', font=FT_AUTO, fill=F_AUTO)
+    put(ws, f'A{r}', f'=DATE(管理年度,{m},1)', fmt='yyyy年m月', font=FT_AUTO, fill=F_AUTO)
     put(ws, f'B{r}', f'=ROUND(SUMIFS(流水收入,流水月份,{MN(m)},{NOTT}),2)',
         fmt=MONEY, font=FT_AUTO, fill=F_AUTO)
     put(ws, f'C{r}', f'=ROUND(SUMIFS(流水支出,流水月份,{MN(m)},{NOTT}),2)',
@@ -587,6 +607,8 @@ put(ws, f'H{M2T}', f'=IF(N($G${M2T})=0,"",SUM(H{M2+3}:H{M2T-1}))', fmt=PCT, font
 ws.freeze_panes = 'A5'
 NAMES['月报收入合计'] = f'月度汇报表!$B${MT}'
 NAMES['月报支出合计'] = f'月度汇报表!$C${MT}'
+NAMES['月报转入合计'] = f'月度汇报表!$E${MT}'
+NAMES['月报转出合计'] = f'月度汇报表!$F${MT}'
 
 # ══════════════════════════════════════════════════════════════════════
 # 5  收支分类报表（新增，顶上那条「收入合计/支出合计/内部转账」按外汇台账的做）
@@ -849,6 +871,10 @@ CHECKS = [
      f'+SUMIFS(流水收入,流水日期,"<="&EOMONTH(汇报表!$I${D2R+1},0))'
      f'-SUMIFS(流水支出,流水日期,"<="&EOMONTH(汇报表!$I${D2R+1},0))),2)', MONEY,
      '月度那块的「期初+收−支+转入−转出」必须还原成同一个数。'),
+    ('勾稽', '12 个月加起来 = 全部流水的收 − 支（没有一笔掉在年份外面）',
+     f'=ROUND((月报收入合计-月报支出合计+月报转入合计-月报转出合计)-({ALLIN}-{ALLOUT}),2)', MONEY,
+     '不为 0 说明有流水没填日期、日期录成了文本（像 2026.6.28）、或者不在【基础资料】的「管理年度」里 —— '
+     '这几笔在按月的三张报表里一分钱都看不到。去【数据录入】核对列找红字。'),
     ('勾稽', '账户子表张数 = 账户档案里的账户数',
      f'={NSUB}-COUNTA(账户表)', NUM0,
      f'现在有 {NSUB} 张子表。加了账户没加子表，这里就不是 0 —— 复制一张子表改 B2 即可。'),
@@ -863,6 +889,10 @@ CHECKS = [
      '账户之间调头寸要两头都录：转出账户记支出、转入账户记收入。不为 0 就是漏了一头。'),
     ('待办', '内部转账「收」「支」笔数差',
      f'=COUNTIFS({IST},流水收入,">0")-COUNTIFS({IST},流水支出,">0")', NUM0, '同上，按笔数再查一遍。'),
+    ('待办', '日期没填 / 录成文本 / 不在管理年度的笔数',
+     '=COUNTA(流水账户)-COUNTIFS(流水月份,">="&(管理年度*100+1),流水月份,"<="&(管理年度*100+12))', NUM0,
+     '这些笔在【月度汇报表】【收支分类报表】【收支报表】里全看不到。'
+     '跨年度的把【基础资料】「管理年度」改一下就出来了。'),
     ('待办', '没填收支类别的流水笔数', '=COUNTIFS(流水账户,"<>",流水类别,"")', NUM0,
      '没类别的笔数进不了【收支分类报表】，也进不了【收支报表】的支出那一块。'),
     ('待办', '收支报表 · 收入「未列示」全年金额',
