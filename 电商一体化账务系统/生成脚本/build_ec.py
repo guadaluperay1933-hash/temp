@@ -18,6 +18,11 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else '电商一体化账务模板_2026.xl
 wb = openpyxl.Workbook()
 wb.remove(wb.active)
 
+def Q(s):
+    """把一段中文包成 Excel 公式里的字符串常量"""
+    return '"' + s.replace('"', '""') + '"'
+
+
 SH = {}
 def sheet(name, hidden=False):
     ws = wb.create_sheet(name)
@@ -55,7 +60,10 @@ BR0, BR1 = 4, 63                     # 基础资料的数据行
 P0, P1 = D0, D0 + N_PUR - 1          # 采购
 S0, S1 = D0, D0 + N_SAL - 1          # 销售
 B0, B1 = D0, D0 + N_RBT - 1          # 返利
-F0, F1 = D0, D0 + N_DRP - 1          # 一件代发
+F0, F1 = D0, D0 + N_DRP - 1          # 一件代发（我卖·别人发）
+TRS0, TRS1 = D0, D0 + N_TRS - 1      # 受托代发（我发·别人卖）
+PSS0, PSS1 = D0, D0 + N_PS - 1       # 平台结算单
+MTS0, MTS1 = D0, D0 + N_MC - 1       # 月末盘点与成本
 K0, K1 = D0, D0 + N_CASH - 1         # 资金流水
 V0, V1 = D0, D0 + N_INV - 1          # 发票
 E0, E1 = D0, D0 + N_EXP - 1          # 费用
@@ -77,6 +85,13 @@ rows = [
                          '注意：往来是按「公司＋往来单位」分开算的，不会把甲公司的应付跟乙公司的应收抵掉。'),
     ('查询月份', '全年', 'General', '从下拉里选。「全年」＝1~12 月累计；'
                          '选某个月＝只看那一个月的发生额，期初自动滚到上月末。'),
+    ('销售成本怎么算', COST_MODES[0], 'General',
+     '★ 全表统一，选一个就行 —— 《销售登记》《受托代发登记》的「单位成本」按这个自动算，不用手工填。\n'
+     'A 月加权平均＝按「截至这一单当天的实际采购加权成本」（含期初库存）自动算，最准，适合商品数不多；\n'
+     'B 毛利率倒轧＝按《商品档案》里那个商品的目标毛利率反推，ERP 数据不准、只想要个大概时用；\n'
+     'C 月末盘点倒轧＝登记页一分成本都不结转，整月成本全靠《月末盘点与成本》倒轧 —— '
+     '每天发货几千单、明细根本没法一笔笔算成本的，就选这个。\n'
+     '不管选哪一种，《月末盘点与成本》里只要填了实盘金额，差额都会自动调成本，账不会跑偏。'),
 ]
 r = 4
 for lbl, val, fmt_, note in rows:
@@ -87,8 +102,9 @@ for lbl, val, fmt_, note in rows:
     r += 1
 dv(ws, 'C5', '=公司下拉', '全部 或 某一家公司', block=True)
 dv(ws, 'C6', '"全年,1,2,3,4,5,6,7,8,9,10,11,12"', '全年 或 1~12 月', block=True)
+dv(ws, 'C7', '"' + ','.join(COST_MODES) + '"', '销售成本的算法，全表统一', block=True)
 
-put(ws, 'B8', '—— 下面是自动算的，别动 ——', font=F_NOTE, align=CR, border=None)
+put(ws, 'B9', '—— 下面是自动算的，别动 ——', font=F_NOTE, align=CR, border=None)
 AUTO = [
     ('起始年月', '=IFERROR(VALUE($C$4),0)*100+IF($C$6="全年",1,IFERROR(VALUE($C$6),1))',
      YM, '本次查询的第一个月'),
@@ -107,7 +123,7 @@ AUTO = [
                  '"✔ 参数正常","✘ 年度或月份填错了 —— 报表会全是 0，请从下拉里重选")',
      TXT, '★ 这一格不是 ✔ 的话，下面所有报表都不能信'),
 ]
-r = 9
+r = 10
 for lbl, f, fmt, note in AUTO:
     put(ws, f'B{r}', lbl, font=F_TOT, fill=FILL_AUTO, align=CR)
     put(ws, f'C{r}', f, font=F_AUTO, fill=FILL_AUTO, fmt=fmt)
@@ -129,14 +145,15 @@ name('公司下拉', f'OFFSET(查询设置!$H$20,0,0,MAX(1,MAX(查询设置!$I$2
 name('账套年度', '查询设置!$C$4')
 name('查询公司', '查询设置!$C$5')
 name('查询月份', '查询设置!$C$6')
-name('起始年月', '查询设置!$C$9')
-name('截止年月', '查询设置!$C$10')
-name('起始日期', '查询设置!$C$11')
-name('截止日期', '查询设置!$C$12')
-name('公司条件', '查询设置!$C$13')
-name('本期标题', '查询设置!$C$14')
-name('年初年月', '查询设置!$C$15')
-name('参数自检', '查询设置!$C$16')
+name('成本方式', '查询设置!$C$7')
+name('起始年月', '查询设置!$C$10')
+name('截止年月', '查询设置!$C$11')
+name('起始日期', '查询设置!$C$12')
+name('截止日期', '查询设置!$C$13')
+name('公司条件', '查询设置!$C$14')
+name('本期标题', '查询设置!$C$15')
+name('年初年月', '查询设置!$C$16')
+name('参数自检', '查询设置!$C$17')
 
 put(ws, 'F4', '常见问题：\n'
               '· 报表全是 0？先看这一页的【公司】是不是选了一家没有业务的公司。\n'
@@ -232,8 +249,10 @@ name('往来单位表', dynlist('往来单位主档', '往来单位名称', HDR,
 # ════════════════════════════════════════════════════════════
 ws = sheet('商品档案')
 title(ws, '商 品 档 案', 'H',
-      '★ 采购、销售、一件代发都只填「商品编码」，名称/规格/单位会自动带出来。')
-IC = ['商品编码', '商品名称', '规格', '计量单位', '默认税率', '商品类别', '状态', '备注']
+      '★ 采购、销售、一件代发、受托代发都只填「商品编码」，名称/规格/单位会自动带出来。\n'
+      '★ 「目标毛利率」只在《查询设置》把销售成本方式选成「B 毛利率倒轧」时才用到，'
+      '平时（A 月加权 / C 月末盘点）填了也不影响账。')
+IC = ['商品编码', '商品名称', '规格', '计量单位', '目标毛利率', '商品类别', '状态', '备注']
 headers(ws, HDR, IC)
 widths(ws, {'A': 12, 'B': 20, 'C': 18, 'D': 10, 'E': 10, 'F': 12, 'G': 10, 'H': 26})
 IR0, IR1 = 4, 4 + N_ITEM - 1
@@ -247,7 +266,6 @@ for r in range(IR0 + len(ITEMS), IR1 + 1):
         put(ws, f'{L(c)}{r}', None, font=F_IN, fill=FILL_IN,
             fmt=PCT if c == 5 else TXT, align=CL if c in (2, 3, 8) else C)
 dv(ws, f'D{IR0}:D{IR1}', '=计量单位表')
-dv(ws, f'E{IR0}:E{IR1}', '=税率表')
 dv(ws, f'G{IR0}:G{IR1}', '"启用,停用"')
 ws.auto_filter.ref = f'A{HDR}:H{IR1}'
 ws.freeze_panes = 'B4'
@@ -258,28 +276,31 @@ name('商品编码表', dynlist('商品档案', '商品编码', HDR, IR0, IR1, '
 # ⑤ 店铺档案
 # ════════════════════════════════════════════════════════════
 ws = sheet('店铺档案')
-title(ws, '店 铺 档 案', 'G',
+title(ws, '店 铺 档 案', 'H',
       '★ 店铺挂在哪家公司、哪个平台，在这里定。《店铺利润分析》按这里的归属汇总。'
-      '「平台佣金率」只是给你估算用的参考值，实际扣费以销售登记里填的为准。')
-SC = ['店铺名称', '所属公司', '平台', '平台佣金率(参考)', '负责人', '状态', '备注']
+      '「平台佣金率」只是给你估算用的参考值，实际扣费以销售登记/平台结算单里填的为准。\n'
+      '★ 「平台结算往来单位」＝这个店的货款是跟谁结的（拼多多平台/抖音平台…）。'
+      '《平台结算单》按「结算单认收入」做账时，应收账款就挂在这个往来单位名下。')
+SC = ['店铺名称', '所属公司', '平台', '平台结算往来单位', '平台佣金率(参考)', '负责人', '状态', '备注']
 headers(ws, HDR, SC)
-widths(ws, {'A': 18, 'B': 14, 'C': 12, 'D': 16, 'E': 12, 'F': 10, 'G': 28})
+widths(ws, {'A': 18, 'B': 14, 'C': 12, 'D': 20, 'E': 16, 'F': 12, 'G': 10, 'H': 28})
 SR0, SR1 = 4, 4 + N_SHOP - 1
-for i, s in enumerate(SHOPS):
+for i, sp in enumerate(SHOPS):
     r = SR0 + i
-    for c, v in enumerate([s[0], s[1], s[2], s[3], s[4], '启用', s[5]], 1):
+    for c, v in enumerate([sp[0], sp[1], sp[2], SHOP_SETTLE.get(sp[2], ''), sp[3], sp[4], '启用', sp[5]], 1):
         put(ws, f'{L(c)}{r}', v, font=F_IN, fill=FILL_IN,
-            fmt=PCT if c == 4 else TXT, align=CL if c in (1, 7) else C)
+            fmt=PCT if c == 5 else TXT, align=CL if c in (1, 4, 8) else C)
 for r in range(SR0 + len(SHOPS), SR1 + 1):
-    for c in range(1, 8):
+    for c in range(1, 9):
         put(ws, f'{L(c)}{r}', None, font=F_IN, fill=FILL_IN,
-            fmt=PCT if c == 4 else TXT, align=CL if c in (1, 7) else C)
+            fmt=PCT if c == 5 else TXT, align=CL if c in (1, 4, 8) else C)
 dv(ws, f'B{SR0}:B{SR1}', '=公司表')
 dv(ws, f'C{SR0}:C{SR1}', '=平台表')
-dv(ws, f'F{SR0}:F{SR1}', '"启用,停用"')
+dv(ws, f'D{SR0}:D{SR1}', '=往来单位表')
+dv(ws, f'G{SR0}:G{SR1}', '"启用,停用"')
 ws.freeze_panes = 'B4'
 page(ws, titles=f'{HDR}:{HDR}')
-name('店铺表', dynlist('店铺档案', '店铺名称', HDR, SR0, SR1, 'G'))
+name('店铺表', dynlist('店铺档案', '店铺名称', HDR, SR0, SR1, 'H'))
 
 # ════════════════════════════════════════════════════════════
 # ⑥ 资金账户档案
@@ -556,10 +577,12 @@ IT_N = f'商品档案!$B${IR0}:$B${IR1}'
 IT_S = f'商品档案!$C${IR0}:$C${IR1}'
 IT_U = f'商品档案!$D${IR0}:$D${IR1}'
 IT_T = f'商品档案!$E${IR0}:$E${IR1}'
+IT_G = IT_T                                   # E 列现在是「目标毛利率」（成本方式 B 用）
 
 SP_N = f'店铺档案!$A${SR0}:$A${SR1}'
 SP_CO = f'店铺档案!$B${SR0}:$B${SR1}'
 SP_PF = f'店铺档案!$C${SR0}:$C${SR1}'
+SP_PT = f'店铺档案!$D${SR0}:$D${SR1}'          # 平台结算往来单位
 
 EX_I = f'基础资料!$M${BR0}:$M${BR1}'
 EX_S = f'基础资料!$N${BR0}:$N${BR1}'
@@ -573,6 +596,9 @@ DP = lambda c: f'一件代发结算!${c}${F0}:${c}${F1}'
 CA = lambda c: f'资金流水!${c}${K0}:${c}${K1}'
 IV = lambda c: f'发票台账!${c}${V0}:${c}${V1}'
 EP = lambda c: f'费用及其他!${c}${E0}:${c}${E1}'
+TR = lambda c: f'受托代发登记!${c}${TRS0}:${c}${TRS1}'
+PS = lambda c: f'平台结算单!${c}${PSS0}:${c}${PSS1}'
+MT = lambda c: f'月末盘点与成本!${c}${MTS0}:${c}${MTS1}'
 MV = lambda c: f'手工凭证!${c}${M0}:${c}${M1}'
 
 def ym(col, r):
@@ -583,14 +609,14 @@ def paid(ref_col, co_col, r):
     """按「关联单号＋公司」汇总真正付出去的钱。只认业务类型以「付-」开头的行；
        同一类型里如果填在收入栏（供应商退款），自动减回来。
        —— 收付必须分开算，否则一件代发那种「同一单号既收客户钱、又付代发商钱」会互相抵掉。"""
-    base = f'{CA("G")},${ref_col}{r},{CA("C")},${co_col}{r},{CA("E")},"付-*"'
-    return f'ROUND(SUMIFS({CA("I")},{base})-SUMIFS({CA("H")},{base}),2)'
+    base = f'{CA("H")},${ref_col}{r},{CA("C")},${co_col}{r},{CA("F")},"付-*"'
+    return f'ROUND(SUMIFS({CA("J")},{base})-SUMIFS({CA("I")},{base}),2)'
 
 
 def recv(ref_col, co_col, r):
     """按「关联单号＋公司」汇总真正收到的钱。只认业务类型以「收-」开头的行。"""
-    base = f'{CA("G")},${ref_col}{r},{CA("C")},${co_col}{r},{CA("E")},"收-*"'
-    return f'ROUND(SUMIFS({CA("H")},{base})-SUMIFS({CA("I")},{base}),2)'
+    base = f'{CA("H")},${ref_col}{r},{CA("C")},${co_col}{r},{CA("F")},"收-*"'
+    return f'ROUND(SUMIFS({CA("I")},{base})-SUMIFS({CA("J")},{base}),2)'
 
 
 
@@ -606,8 +632,16 @@ def off_ar(ref_col, co_col, r):
             f'-SUMIFS({MV("I")},{MV("F")},"应收账款",{MV("H")},${ref_col}{r},{MV("C")},${co_col}{r}),2)')
 
 
+def off_adv(ref_col, co_col, r):
+    """这张受托代发单被《手工凭证》正式抵销掉的代收货款（借 其他应付款—代收货款 − 贷）"""
+    return (f'ROUND(SUMIFS({MV("I")},{MV("F")},"其他应付款—代收货款",{MV("H")},${ref_col}{r},'
+            f'{MV("C")},${co_col}{r})'
+            f'-SUMIFS({MV("J")},{MV("F")},"其他应付款—代收货款",{MV("H")},${ref_col}{r},'
+            f'{MV("C")},${co_col}{r}),2)')
+
+
 def invoiced(ref_col, co_col, kind, r):
-    return (f'ROUND(SUMIFS({IV("J")},{IV("K")},${ref_col}{r},{IV("C")},${co_col}{r},'
+    return (f'ROUND(SUMIFS({IV("G")},{IV("I")},${ref_col}{r},{IV("C")},${co_col}{r},'
             f'{IV("D")},"{kind}"),2)')
 
 def st_pay(total, unpaid, paid_, r):
@@ -626,23 +660,23 @@ def st_inv(total, done):
 # ⑩ 采购登记
 # ════════════════════════════════════════════════════════════
 ws = sheet('采购登记')
-title(ws, '采 购 登 记', 'AD',
-      '★ 浅黄＝手工填，浅灰＝公式自动。「应收返利」优先用你填的固定金额，没填才按返利率算。\n'
-      '★ 实际采购成本 = 不含税金额 − 应收返利 —— 入账的库存商品就是这个数，返利单独挂「其他应收款—应收返利」，'
+title(ws, '采 购 登 记', 'AA',
+      '★ 全表按含税金额记账（内帐口径）：「采购金额」就是你实付给供应商的数，不拆不含税和税额。\n'
+      '★ 浅黄＝手工填，浅灰＝公式自动。「应收返利」优先用你填的固定金额，没填才按返利率×含税金额算。\n'
+      '★ 实际采购成本 = 采购金额 − 应收返利 —— 入账的库存商品就是这个数，返利单独挂「其他应收款—应收返利」，'
       '所以返利不会在利润表里重复算一次。\n'
       '★ 退货就在「数量」里填负数，金额、成本、返利会一起变负。付款情况是按《资金流水》里填了同一个「采购单号」的行自动汇总的。')
 PUC = ['序号', '日期', '采购单号', '公司', '店铺', '供应商', '商品编码', '商品名称', '规格',
-       '数量', '含税单价', '含税金额', '税率', '不含税金额', '税额',
+       '数量', '含税单价', '采购金额(含税)',
        '返利率', '返利金额(固定·填了就不按比例，填0＝没返利)', '应收返利', '实际采购成本', '单位实际成本',
        '已付/已结', '未付金额', '付款状态', '信用期(天)', '到期日', '逾期天数',
-       '已开票金额', '票据状态', '备注', '年月']
+       '已取得发票金额', '票据状态', '备注', '年月']
 headers(ws, HDR, PUC)
 widths(ws, {'A': 6, 'B': 11, 'C': 14, 'D': 12, 'E': 14, 'F': 20, 'G': 11, 'H': 16, 'I': 14,
-            'J': 9, 'K': 11, 'L': 13, 'M': 8, 'N': 13, 'O': 11,
-            'P': 9, 'Q': 13, 'R': 12, 'S': 14, 'T': 13,
-            'U': 13, 'V': 13, 'W': 11, 'X': 11, 'Y': 11, 'Z': 10,
-            'AA': 13, 'AB': 11, 'AC': 36, 'AD': 9})
-IN_COLS_P = 'BCDEFGJKMPQAC'
+            'J': 9, 'K': 11, 'L': 14,
+            'M': 9, 'N': 13, 'O': 12, 'P': 14, 'Q': 13,
+            'R': 13, 'S': 13, 'T': 11, 'U': 11, 'V': 11, 'W': 10,
+            'X': 15, 'Y': 11, 'Z': 36, 'AA': 9})
 for i in range(N_PUR):
     r = P0 + i
     src = T.PURCHASE[i] if i < len(T.PURCHASE) else None
@@ -661,71 +695,71 @@ for i in range(N_PUR):
     put(ws, f'K{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
     put(ws, f'L{r}', f'=IF(OR($J{r}="",$K{r}=""),"",ROUND($J{r}*$K{r},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'M{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'N{r}', f'=IF($L{r}="","",ROUND($L{r}/(1+N($M{r})),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'O{r}', f'=IF($L{r}="","",ROUND($L{r}-$N{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'P{r}', src[9] if src and src[9] != '' else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'Q{r}', src[10] if src and src[10] != '' else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
-    put(ws, f'R{r}', f'=IF($B{r}="","",IF($Q{r}<>"",ROUND($Q{r},2),ROUND(N($N{r})*N($P{r}),2)))',
+    put(ws, f'M{r}', src[8] if src and src[8] != '' else None, font=F_IN, fill=FILL_IN, fmt=PCT)
+    put(ws, f'N{r}', src[9] if src and src[9] != '' else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'O{r}', f'=IF($B{r}="","",IF($N{r}<>"",ROUND($N{r},2),ROUND(N($L{r})*N($M{r}),2)))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'S{r}', f'=IF($B{r}="","",ROUND(N($N{r})-N($R{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'T{r}', f'=IF(OR($B{r}="",N($J{r})=0),"",ROUND($S{r}/$J{r},4))',
+    put(ws, f'P{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($O{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF(OR($B{r}="",N($J{r})=0),"",ROUND($P{r}/$J{r},4))',
         font=F_AUTO, fill=FILL_AUTO, fmt=PRICE)
-    put(ws, f'U{r}', f'=IF($B{r}="","",ROUND({paid("C","D",r)}+{off_ap("C","D",r)},2))',
+    put(ws, f'R{r}', f'=IF($B{r}="","",ROUND({paid("C","D",r)}+{off_ap("C","D",r)},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'V{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($U{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'W{r}', f'=IF($B{r}="","",{st_pay(f"N($L{r})", f"N($V{r})", f"N($U{r})", r)})',
+    put(ws, f'S{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($R{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'T{r}', f'=IF($B{r}="","",{st_pay(f"N($L{r})", f"N($S{r})", f"N($R{r})", r)})',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'X{r}', f'=IF($B{r}="","",IFERROR(INDEX({PT_CRD},MATCH($F{r},{PT_N},0)),0))',
+    put(ws, f'U{r}', f'=IF($B{r}="","",IFERROR(INDEX({PT_CRD},MATCH($F{r},{PT_N},0)),0))',
         font=F_AUTO, fill=FILL_AUTO, fmt='0')
-    put(ws, f'Y{r}', f'=IF($B{r}="","",$B{r}+N($X{r}))', font=F_AUTO, fill=FILL_AUTO, fmt=DATEQ)
-    put(ws, f'Z{r}', f'=IF(OR($B{r}="",ROUND(N($V{r}),2)=0),"",MAX(0,TODAY()-$Y{r}))',
+    put(ws, f'V{r}', f'=IF($B{r}="","",$B{r}+N($U{r}))', font=F_AUTO, fill=FILL_AUTO, fmt=DATEQ)
+    put(ws, f'W{r}', f'=IF(OR($B{r}="",ROUND(N($S{r}),2)=0),"",MAX(0,TODAY()-$V{r}))',
         font=F_AUTO, fill=FILL_AUTO, fmt='0;;\\-')
-    put(ws, f'AA{r}', f'=IF($B{r}="","",{invoiced("C","D","进项",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'AB{r}', f'=IF($B{r}="","",{st_inv(f"N($L{r})", f"N($AA{r})")})', font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'AC{r}', src[12] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'AD{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'X{r}', f'=IF($B{r}="","",{invoiced("C","D","进项",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Y{r}', f'=IF($B{r}="","",{st_inv(f"N($L{r})", f"N($X{r})")})', font=F_AUTO, fill=FILL_AUTO)
+    put(ws, f'Z{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'AA{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 PT_TOT = P1 + 1
 put(ws, f'A{PT_TOT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFGHIKMPQTXYZ'):
+for c in list('BCDEFGHIKMQUVW'):
     put(ws, f'{c}{PT_TOT}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['J', 'L', 'N', 'O', 'R', 'S', 'U', 'V', 'AA']:
+for c in ['J', 'L', 'N', 'O', 'P', 'R', 'S', 'X']:
     put(ws, f'{c}{PT_TOT}', f'=ROUND(SUM({c}{P0}:{c}{P1}),2)', font=F_TOT, fill=FILL_TOT,
         fmt=NUM if c == 'J' else MONEY)
-for c in ['W', 'AB', 'AC', 'AD']:
+for c in ['T', 'Y', 'Z', 'AA']:
     put(ws, f'{c}{PT_TOT}', None, font=F_TOT, fill=FILL_TOT)
 dv(ws, f'D{P0}:D{P1}', '=公司表', '哪家公司买的')
 dv(ws, f'E{P0}:E{P1}', '=店铺表', '专门给某个店铺备的货才填，一般留空')
 dv(ws, f'F{P0}:F{P1}', '=供应商名单', '只列勾了「是否供应商＝是」的往来单位')
 dv(ws, f'G{P0}:G{P1}', '=商品编码表')
-dv(ws, f'M{P0}:M{P1}', '=税率表')
-ws.auto_filter.ref = f'A{HDR}:AD{P1}'
+ws.auto_filter.ref = f'A{HDR}:AA{P1}'
 ws.freeze_panes = 'D4'
 page(ws, titles=f'{HDR}:{HDR}')
-
 # ════════════════════════════════════════════════════════════
 # ⑪ 销售登记
 # ════════════════════════════════════════════════════════════
 ws = sheet('销售登记')
-title(ws, '销 售 登 记', 'AF',
-      '★ 单位成本是「截至这一单当天的实际采购加权成本」（含期初库存），'
-      '不是一卖就把整批采购全转成本；要手工指定成本就填「手工单位成本」那一列。\n'
+title(ws, '销 售 登 记', 'AC',
+      '★ 全表按含税金额记账（内帐口径）：「销售金额」就是买家实付的数，不拆不含税和销项税。\n'
+      '★ 不用一单一行！一行可以是一笔大单，也可以是「这个店这个商品这个月的汇总」—— '
+      '「订单笔数」那一列填这行代表多少笔就行。零售量特别大的店，连汇总都不用录，直接去《平台结算单》按月录一行。\n'
+      '★ 单位成本是自动算的，不用手工填。算法看《查询设置》里的【销售成本怎么算】：\n'
+      '　 A 月加权平均＝按「截至这一单当天的实际采购加权成本」（含期初库存）自动算；\n'
+      '　 B 毛利率倒轧＝按《商品档案》里那个商品的目标毛利率反推；\n'
+      '　 C 月末盘点倒轧＝这里一分成本都不结转，整月的成本由《月末盘点与成本》一次性倒轧出来。\n'
       '★ 平台扣费（佣金/技术服务费）直接从货款里扣，所以它一边进销售费用、一边冲应收账款；'
-      '「未回款 = 含税金额 − 平台扣费 − 已回/已结」，平台结算打过来的净额正好对上。\n'
-      '★ 退款就把数量填负数（扣费也填负数），收入、成本、税一起冲回。')
+      '「未回款 = 销售金额 − 平台扣费 − 已回/已结」，平台结算打过来的净额正好对上。\n'
+      '★ 退款就把数量填负数（扣费也填负数），收入、成本一起冲回。')
 SAC = ['序号', '日期', '销售单号', '公司', '店铺', '平台', '客户', '商品编码', '商品名称', '规格',
-       '数量', '含税单价', '含税金额', '税率', '不含税收入', '销项税额', '平台扣费',
-       '单位成本(自动)', '手工单位成本', '销售成本', '毛利', '毛利率',
+       '数量', '含税单价', '销售金额(含税)', '订单笔数', '平台扣费',
+       '单位成本(自动)', '销售成本', '毛利', '毛利率',
        '已回/已结', '未回款', '回款状态', '信用期(天)', '到期日', '逾期天数',
        '已开票金额', '票据状态', '备注', '年月']
 headers(ws, HDR, SAC)
 widths(ws, {'A': 6, 'B': 11, 'C': 14, 'D': 12, 'E': 14, 'F': 10, 'G': 20, 'H': 11, 'I': 16, 'J': 14,
-            'K': 9, 'L': 11, 'M': 13, 'N': 8, 'O': 13, 'P': 12, 'Q': 12,
-            'R': 13, 'S': 14, 'T': 13, 'U': 12, 'V': 10,
-            'W': 13, 'X': 13, 'Y': 11, 'Z': 11, 'AA': 11, 'AB': 10,
-            'AC': 13, 'AD': 11, 'AE': 36, 'AF': 9})
+            'K': 9, 'L': 11, 'M': 14, 'N': 10, 'O': 12,
+            'P': 14, 'Q': 13, 'R': 12, 'S': 10,
+            'T': 13, 'U': 13, 'V': 13, 'W': 11, 'X': 11, 'Y': 11,
+            'Z': 13, 'AA': 11, 'AB': 36, 'AC': 9})
 COST_NUM = (lambda r: f'(SUMIFS({OPI_A},{OPI_CO},$D{r},{OPI_IT},$H{r})'
-                      f'+SUMIFS({PU("S")},{PU("D")},$D{r},{PU("G")},$H{r},{PU("B")},"<="&$B{r}))')
+                      f'+SUMIFS({PU("P")},{PU("D")},$D{r},{PU("G")},$H{r},{PU("B")},"<="&$B{r}))')
 COST_DEN = (lambda r: f'(SUMIFS({OPI_Q},{OPI_CO},$D{r},{OPI_IT},$H{r})'
                       f'+SUMIFS({PU("J")},{PU("D")},$D{r},{PU("G")},$H{r},{PU("B")},"<="&$B{r}))')
 for i in range(N_SAL):
@@ -748,54 +782,52 @@ for i in range(N_SAL):
     put(ws, f'L{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
     put(ws, f'M{r}', f'=IF(OR($K{r}="",$L{r}=""),"",ROUND($K{r}*$L{r},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'N{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'O{r}', f'=IF($M{r}="","",ROUND($M{r}/(1+N($N{r})),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'P{r}', f'=IF($M{r}="","",ROUND($M{r}-$O{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Q{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
-    put(ws, f'R{r}', f'=IF($B{r}="","",IFERROR(ROUND({COST_NUM(r)}/{COST_DEN(r)},4),""))',
+    put(ws, f'N{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=NUM)
+    put(ws, f'O{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'P{r}', f'=IF($B{r}="","",IF(LEFT(成本方式,1)="C","盘点倒轧",'
+                     f'IF(LEFT(成本方式,1)="B",ROUND(N($L{r})*(1-N(IFERROR(INDEX({IT_G},'
+                     f'MATCH($H{r},{IT_C},0)),0))),4),'
+                     f'IFERROR(ROUND({COST_NUM(r)}/{COST_DEN(r)},4),""))))',
         font=F_AUTO, fill=FILL_AUTO, fmt=PRICE)
-    put(ws, f'S{r}', None, font=F_IN, fill=FILL_IN, fmt=PRICE)
-    put(ws, f'T{r}', f'=IF($B{r}="","",ROUND(IF($S{r}<>"",$S{r},N($R{r}))*N($K{r}),2))',
+    put(ws, f'Q{r}', f'=IF($B{r}="","",ROUND(N($P{r})*N($K{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'U{r}', f'=IF($B{r}="","",ROUND(N($O{r})-N($T{r})-N($Q{r}),2))',
+    put(ws, f'R{r}', f'=IF($B{r}="","",ROUND(N($M{r})-N($Q{r})-N($O{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'V{r}', f'=IF(OR($B{r}="",ROUND(N($O{r}),2)=0),"",ROUND(N($U{r})/$O{r},4))',
+    put(ws, f'S{r}', f'=IF(OR($B{r}="",ROUND(N($M{r}),2)=0),"",ROUND(N($R{r})/$M{r},4))',
         font=F_AUTO, fill=FILL_AUTO, fmt=PCT)
-    put(ws, f'W{r}', f'=IF($B{r}="","",ROUND({recv("C","D",r)}+{off_ar("C","D",r)},2))',
+    put(ws, f'T{r}', f'=IF($B{r}="","",ROUND({recv("C","D",r)}+{off_ar("C","D",r)},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'X{r}', f'=IF($B{r}="","",ROUND(N($M{r})-N($Q{r})-N($W{r}),2))',
+    put(ws, f'U{r}', f'=IF($B{r}="","",ROUND(N($M{r})-N($O{r})-N($T{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Y{r}', f'=IF($B{r}="","",{st_rec(f"N($M{r})-N($Q{r})", f"N($X{r})", f"N($W{r})", r)})',
+    put(ws, f'V{r}', f'=IF($B{r}="","",{st_rec(f"N($M{r})-N($O{r})", f"N($U{r})", f"N($T{r})", r)})',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'Z{r}', f'=IF($B{r}="","",IFERROR(INDEX({PT_CRD},MATCH($G{r},{PT_N},0)),0))',
+    put(ws, f'W{r}', f'=IF($B{r}="","",IFERROR(INDEX({PT_CRD},MATCH($G{r},{PT_N},0)),0))',
         font=F_AUTO, fill=FILL_AUTO, fmt='0')
-    put(ws, f'AA{r}', f'=IF($B{r}="","",$B{r}+N($Z{r}))', font=F_AUTO, fill=FILL_AUTO, fmt=DATEQ)
-    put(ws, f'AB{r}', f'=IF(OR($B{r}="",ROUND(N($X{r}),2)=0),"",MAX(0,TODAY()-$AA{r}))',
+    put(ws, f'X{r}', f'=IF($B{r}="","",$B{r}+N($W{r}))', font=F_AUTO, fill=FILL_AUTO, fmt=DATEQ)
+    put(ws, f'Y{r}', f'=IF(OR($B{r}="",ROUND(N($U{r}),2)=0),"",MAX(0,TODAY()-$X{r}))',
         font=F_AUTO, fill=FILL_AUTO, fmt='0;;\\-')
-    put(ws, f'AC{r}', f'=IF($B{r}="","",{invoiced("C","D","销项",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'AD{r}', f'=IF($B{r}="","",{st_inv(f"N($M{r})", f"N($AC{r})")})', font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'AE{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'AF{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'Z{r}', f'=IF($B{r}="","",{invoiced("C","D","销项",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'AA{r}', f'=IF($B{r}="","",{st_inv(f"N($M{r})", f"N($Z{r})")})', font=F_AUTO, fill=FILL_AUTO)
+    put(ws, f'AB{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'AC{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 ST_TOT = S1 + 1
 put(ws, f'A{ST_TOT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFGHIJLNRSVYZAAAB'):
+for c in list('BCDEFGHIJLPSVWXY'):
     put(ws, f'{c}{ST_TOT}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['K', 'M', 'O', 'P', 'Q', 'T', 'U', 'W', 'X', 'AC']:
+for c in ['K', 'M', 'N', 'O', 'Q', 'R', 'T', 'U', 'Z']:
     put(ws, f'{c}{ST_TOT}', f'=ROUND(SUM({c}{S0}:{c}{S1}),2)', font=F_TOT, fill=FILL_TOT,
-        fmt=NUM if c == 'K' else MONEY)
-for c in ['AD', 'AE', 'AF']:
+        fmt=NUM if c in ('K', 'N') else MONEY)
+for c in ['AA', 'AB', 'AC']:
     put(ws, f'{c}{ST_TOT}', None, font=F_TOT, fill=FILL_TOT)
 dv(ws, f'D{S0}:D{S1}', '=公司表')
 dv(ws, f'E{S0}:E{S1}', '=店铺表', '哪个店卖的 —— 店铺利润分析按这一列汇总')
 dv(ws, f'G{S0}:G{S1}', '=客户名单', '只列勾了「是否客户＝是」的往来单位')
 dv(ws, f'H{S0}:H{S1}', '=商品编码表')
-dv(ws, f'N{S0}:N{S1}', '=税率表')
-ws.auto_filter.ref = f'A{HDR}:AF{S1}'
+ws.auto_filter.ref = f'A{HDR}:AC{S1}'
 ws.freeze_panes = 'D4'
 page(ws, titles=f'{HDR}:{HDR}')
 
 print('  ✓ 采购登记 / 销售登记')
-
 # ════════════════════════════════════════════════════════════
 # ⑫ 返利登记
 # ════════════════════════════════════════════════════════════
@@ -824,8 +856,8 @@ for i in range(N_RBT):
     put(ws, f'E{r}', pn(src[2]) if src else None, font=F_IN, fill=FILL_IN, align=CL)
     put(ws, f'F{r}', src[3] if src else None, font=F_IN, fill=FILL_IN, fmt=YM)
     put(ws, f'G{r}', src[4] if src and src[4] != 0 else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'H{r}', f'=IF($C{r}="","",ROUND(SUMIFS({PU("R")},{PU("D")},$D{r},{PU("F")},$E{r},'
-                     f'{PU("AD")},$F{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'H{r}', f'=IF($C{r}="","",ROUND(SUMIFS({PU("O")},{PU("D")},$D{r},{PU("F")},$E{r},'
+                     f'{PU("AA")},$F{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'I{r}', src[5] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
     put(ws, f'J{r}', f'=IF(OR($C{r}="",$I{r}=""),"",ROUND(N($I{r})-N($H{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
@@ -856,20 +888,20 @@ page(ws, titles=f'{HDR}:{HDR}')
 # ⑬ 一件代发结算
 # ════════════════════════════════════════════════════════════
 ws = sheet('一件代发结算')
-title(ws, '一 件 代 发 结 算', 'AC',
+title(ws, '一 件 代 发 结 算（我卖 · 别人发货）', 'W',
+      '★ 这张表是「我的店出单，找代发商发货」。反过来「我发货、别人的店卖」在《受托代发登记》。\n'
+      '★ 全表含税口径：售价、代发成本都按实收实付的数记。\n'
       '★ 代发的货不进自己仓库，所以不走库存商品：收入照记，成本直接进主营业务成本，'
       '欠代发商的钱挂应付账款 —— 跟正常采购＋销售分开，免得把库存搞乱。\n'
       '★ 回款用「结算单号」关联《资金流水》的「收-销售货款」；付代发商的钱用同一个单号记「付-代发货款」。\n'
       '★ 代发退货：数量填负数，售价成本扣费一起冲回。')
 DPC = ['序号', '日期', '结算单号', '公司', '店铺', '代发供应商', '客户/平台', '商品编码', '商品名称',
-       '数量', '含税售价', '含税销售额', '销售税率', '不含税收入', '销项税额',
-       '代发含税单价', '代发含税成本', '代发税率', '代发不含税成本', '代发进项税',
+       '数量', '含税售价', '销售金额(含税)', '代发含税单价', '代发成本(含税)',
        '平台扣费', '毛利', '已回款', '未回款', '已付代发款', '未付代发款', '结算状态', '备注', '年月']
 headers(ws, HDR, DPC)
 widths(ws, {'A': 6, 'B': 11, 'C': 14, 'D': 12, 'E': 14, 'F': 16, 'G': 16, 'H': 11, 'I': 16,
-            'J': 9, 'K': 11, 'L': 13, 'M': 10, 'N': 13, 'O': 11,
-            'P': 13, 'Q': 14, 'R': 10, 'S': 15, 'T': 12,
-            'U': 11, 'V': 12, 'W': 12, 'X': 12, 'Y': 13, 'Z': 13, 'AA': 12, 'AB': 34, 'AC': 9})
+            'J': 9, 'K': 11, 'L': 14, 'M': 13, 'N': 14,
+            'O': 11, 'P': 12, 'Q': 12, 'R': 12, 'S': 13, 'T': 13, 'U': 12, 'V': 34, 'W': 9})
 for i in range(N_DRP):
     r = F0 + i
     src = T.DROPSHIP[i] if i < len(T.DROPSHIP) else None
@@ -886,33 +918,27 @@ for i in range(N_DRP):
     put(ws, f'J{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=NUM)
     put(ws, f'K{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
     put(ws, f'L{r}', f'=IF(OR($J{r}="",$K{r}=""),"",ROUND($J{r}*$K{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'M{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'N{r}', f'=IF($L{r}="","",ROUND($L{r}/(1+N($M{r})),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'O{r}', f'=IF($L{r}="","",ROUND($L{r}-$N{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'P{r}', src[10] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
-    put(ws, f'Q{r}', f'=IF(OR($J{r}="",$P{r}=""),"",ROUND($J{r}*$P{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'R{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'S{r}', f'=IF($Q{r}="","",ROUND($Q{r}/(1+N($R{r})),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'T{r}', f'=IF($Q{r}="","",ROUND($Q{r}-$S{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'U{r}', src[12] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
-    put(ws, f'V{r}', f'=IF($B{r}="","",ROUND(N($N{r})-N($S{r})-N($U{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'W{r}', f'=IF($B{r}="","",ROUND({recv("C","D",r)}+{off_ar("C","D",r)},2))',
+    put(ws, f'M{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
+    put(ws, f'N{r}', f'=IF(OR($J{r}="",$M{r}=""),"",ROUND($J{r}*$M{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'O{r}', src[10] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'P{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($N{r})-N($O{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF($B{r}="","",ROUND({recv("C","D",r)}+{off_ar("C","D",r)},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'X{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($U{r})-N($W{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Y{r}', f'=IF($B{r}="","",ROUND({paid("C","D",r)}+{off_ap("C","D",r)},2))',
+    put(ws, f'R{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($O{r})-N($Q{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'S{r}', f'=IF($B{r}="","",ROUND({paid("C","D",r)}+{off_ap("C","D",r)},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Z{r}', f'=IF($B{r}="","",ROUND(N($Q{r})-N($Y{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'AA{r}', f'=IF($B{r}="","",IF(AND(ROUND(N($X{r}),2)=0,ROUND(N($Z{r}),2)=0),"已结清",'
-                      f'IF(AND(ROUND(N($X{r}),2)<=0,ROUND(N($Z{r}),2)<=0),"退货待冲回",'
-                      f'IF(ROUND(N($X{r}),2)>0,IF(ROUND(N($Z{r}),2)>0,"收付都欠","欠客户回款"),"欠代发商货款"))))',
+    put(ws, f'T{r}', f'=IF($B{r}="","",ROUND(N($N{r})-N($S{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'U{r}', f'=IF($B{r}="","",IF(AND(ROUND(N($R{r}),2)=0,ROUND(N($T{r}),2)=0),"已结清",'
+                     f'IF(AND(ROUND(N($R{r}),2)<=0,ROUND(N($T{r}),2)<=0),"退货待冲回",'
+                     f'IF(ROUND(N($R{r}),2)>0,IF(ROUND(N($T{r}),2)>0,"收付都欠","欠客户回款"),"欠代发商货款"))))',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'AB{r}', src[13] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'AC{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'V{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'W{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 DT = F1 + 1
 put(ws, f'A{DT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFGHIKMPRAAABAC'):
+for c in list('BCDEFGHIKMUVW'):
     put(ws, f'{c}{DT}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['J', 'L', 'N', 'O', 'Q', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
+for c in ['J', 'L', 'N', 'O', 'P', 'Q', 'R', 'S', 'T']:
     put(ws, f'{c}{DT}', f'=ROUND(SUM({c}{F0}:{c}{F1}),2)', font=F_TOT, fill=FILL_TOT,
         fmt=NUM if c == 'J' else MONEY)
 dv(ws, f'D{F0}:D{F1}', '=公司表')
@@ -920,91 +946,388 @@ dv(ws, f'E{F0}:E{F1}', '=店铺表')
 dv(ws, f'F{F0}:F{F1}', '=供应商名单')
 dv(ws, f'G{F0}:G{F1}', '=客户名单')
 dv(ws, f'H{F0}:H{F1}', '=商品编码表')
-dv(ws, f'M{F0}:M{F1}', '=税率表')
-dv(ws, f'R{F0}:R{F1}', '=税率表')
-ws.auto_filter.ref = f'A{HDR}:AC{F1}'
+ws.auto_filter.ref = f'A{HDR}:W{F1}'
 ws.freeze_panes = 'D4'
 page(ws, titles=f'{HDR}:{HDR}')
 
 # ════════════════════════════════════════════════════════════
+# ⑬-2 受托代发登记（我发货 · 别人的店卖）
+# ════════════════════════════════════════════════════════════
+ws = sheet('受托代发登记')
+title(ws, '受 托 代 发 登 记（我发货 · 别人的店卖）', 'AD',
+      '★ 帮别的店铺做一件代发就记在这里。跟《一件代发结算》正好反过来：那张是我卖别人发，这张是别人卖我发。\n'
+      '★ 【资金归属】是这张表的关键，只有两种：\n'
+      '　 ①「款到我司」＝买家付的钱先进我们账户。这笔钱大部分不是我们的！'
+      '所以整笔先挂「其他应付款—代收货款」，只有【我的供货额＋代发服务费】才转成收入，'
+      '剩下的【应退委托方】欠着委托店铺，什么时候结给它，就在《资金流水》记「付-代发结款」。\n'
+      '　 ②「款到委托方」＝买家的钱进委托店铺自己的账户，它按期把我的供货款结给我。'
+      '那就是一笔普通应收账款，代收货款那一套完全不出现。\n'
+      '★ 货是我们的，所以要减库存：成本按《查询设置》的成本方式自动算，跟销售登记一个算法。\n'
+      '★ 平台扣费（如果走的是我们的平台店）是从代收货款里扣的，实质由委托方承担，'
+      '所以它不进我们的损益，只是让【应退委托方】少了一块。\n'
+      '★ 退货：数量填负数，代收货款/收入/成本/应退委托方一起冲回。')
+TRC = ['序号', '日期', '代发单号', '公司', '委托方(店铺合作方)', '平台/店铺', '资金归属',
+       '商品编码', '商品名称', '数量', '终端售价', '代收货款',
+       '我的供货单价', '我的供货额', '服务费单价', '服务费合计', '我的收入合计',
+       '平台扣费', '预计到账(代收−扣费)', '应退委托方',
+       '单位成本(自动)', '我的成本', '我的毛利',
+       '已收', '未收', '已结委托方', '未结委托方', '状态', '备注', '年月']
+headers(ws, HDR, TRC)
+widths(ws, {'A': 6, 'B': 11, 'C': 14, 'D': 12, 'E': 20, 'F': 13, 'G': 13,
+            'H': 11, 'I': 16, 'J': 9, 'K': 11, 'L': 14,
+            'M': 13, 'N': 13, 'O': 11, 'P': 12, 'Q': 14,
+            'R': 11, 'S': 17, 'T': 14,
+            'U': 14, 'V': 13, 'W': 12,
+            'X': 12, 'Y': 12, 'Z': 13, 'AA': 13, 'AB': 14, 'AC': 34, 'AD': 9})
+TCOST_N = (lambda r: f'(SUMIFS({OPI_A},{OPI_CO},$D{r},{OPI_IT},$H{r})'
+                     f'+SUMIFS({PU("P")},{PU("D")},$D{r},{PU("G")},$H{r},{PU("B")},"<="&$B{r}))')
+TCOST_D = (lambda r: f'(SUMIFS({OPI_Q},{OPI_CO},$D{r},{OPI_IT},$H{r})'
+                     f'+SUMIFS({PU("J")},{PU("D")},$D{r},{PU("G")},$H{r},{PU("B")},"<="&$B{r}))')
+for i in range(N_TRS):
+    r = TRS0 + i
+    src = T.TRUST[i] if i < len(T.TRUST) else None
+    put(ws, f'A{r}', f'=IF($B{r}="","",COUNT($B${TRS0}:$B{r}))', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'B{r}', src[0] if src else None, font=F_IN, fill=FILL_IN, fmt=DATEF)
+    put(ws, f'C{r}', src[1] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'D{r}', src[2] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'E{r}', pn(src[3]) if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'F{r}', src[4] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'G{r}', src[5] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'H{r}', src[6] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'I{r}', f'=IF($H{r}="","",IFERROR(INDEX({IT_N},MATCH($H{r},{IT_C},0)),"★档案里没有"))',
+        font=F_AUTO, fill=FILL_AUTO, align=CL)
+    put(ws, f'J{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=NUM)
+    put(ws, f'K{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
+    put(ws, f'L{r}', f'=IF($B{r}="","",IF($G{r}="款到我司",ROUND(N($J{r})*N($K{r}),2),0))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'M{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
+    put(ws, f'N{r}', f'=IF($B{r}="","",ROUND(N($J{r})*N($M{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'O{r}', src[10] if src else None, font=F_IN, fill=FILL_IN, fmt=PRICE)
+    put(ws, f'P{r}', f'=IF($B{r}="","",ROUND(N($J{r})*N($O{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF($B{r}="","",ROUND(N($N{r})+N($P{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'R{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'S{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($R{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'T{r}', f'=IF($B{r}="","",IF($G{r}="款到我司",ROUND(N($S{r})-N($Q{r}),2),0))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'U{r}', f'=IF($B{r}="","",IF(LEFT(成本方式,1)="C","盘点倒轧",'
+                     f'IF(LEFT(成本方式,1)="B",ROUND(N($M{r})*(1-N(IFERROR(INDEX({IT_G},'
+                     f'MATCH($H{r},{IT_C},0)),0))),4),'
+                     f'IFERROR(ROUND({TCOST_N(r)}/{TCOST_D(r)},4),""))))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=PRICE)
+    put(ws, f'V{r}', f'=IF($B{r}="","",ROUND(N($U{r})*N($J{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'W{r}', f'=IF($B{r}="","",ROUND(N($Q{r})-N($V{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'X{r}', f'=IF($B{r}="","",{recv("C","D",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Y{r}', f'=IF($B{r}="","",IF($G{r}="款到我司",ROUND(N($S{r})-N($X{r}),2),'
+                     f'ROUND(N($Q{r})-N($X{r})-{off_ar("C","D",r)},2)))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Z{r}', f'=IF($B{r}="","",IF($G{r}="款到我司",'
+                     f'ROUND({paid("C","D",r)}+{off_adv("C","D",r)},2),0))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'AA{r}', f'=IF($B{r}="","",ROUND(N($T{r})-N($Z{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'AB{r}', f'=IF($B{r}="","",IF(AND(ROUND(N($Y{r}),2)=0,ROUND(N($AA{r}),2)=0),"已结清",'
+                      f'IF(AND(ROUND(N($Y{r}),2)<=0,ROUND(N($AA{r}),2)<=0),"退货待冲回",'
+                      f'IF(ROUND(N($Y{r}),2)>0,IF(ROUND(N($AA{r}),2)>0,"钱没收齐·也还欠委托方",'
+                      f'"等对方付钱"),"还欠委托方"))))',
+        font=F_AUTO, fill=FILL_AUTO)
+    put(ws, f'AC{r}', src[12] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'AD{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'AE{r}', f'=IF(OR($B{r}="",$G{r}<>"款到我司"),0,ROUND(N($AA{r}),2))',
+        font=F_AUTO, fmt=MONEY, border=None)
+    put(ws, f'AF{r}', f'=IF(OR($B{r}="",$G{r}<>"款到委托方"),0,ROUND(N($Y{r}),2))',
+        font=F_AUTO, fmt=MONEY, border=None)
+ws.column_dimensions['AE'].hidden = True
+ws.column_dimensions['AF'].hidden = True
+TRT = TRS1 + 1
+put(ws, f'A{TRT}', '合  计', font=F_TOT, fill=FILL_TOT)
+for c in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'M', 'O', 'U', 'AB', 'AC', 'AD']:
+    put(ws, f'{c}{TRT}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['J', 'L', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z', 'AA']:
+    put(ws, f'{c}{TRT}', f'=ROUND(SUM({c}{TRS0}:{c}{TRS1}),2)', font=F_TOT, fill=FILL_TOT,
+        fmt=NUM if c == 'J' else MONEY)
+dv(ws, f'D{TRS0}:D{TRS1}', '=公司表')
+dv(ws, f'E{TRS0}:E{TRS1}', '=合作方名单', '只列勾了「是否店铺合作方＝是」的往来单位')
+dv(ws, f'F{TRS0}:F{TRS1}', '=平台表')
+dv(ws, f'G{TRS0}:G{TRS1}', '"' + ','.join(FUND_OWNER) + '"',
+   '款到我司＝钱先进我们账户，要挂代收货款；款到委托方＝只挂应收', block=True)
+dv(ws, f'H{TRS0}:H{TRS1}', '=商品编码表')
+ws.auto_filter.ref = f'A{HDR}:AD{TRS1}'
+ws.freeze_panes = 'D4'
+page(ws, titles=f'{HDR}:{HDR}')
+
+# ════════════════════════════════════════════════════════════
+# ⑬-3 平台结算单（拼多多/抖音/淘宝批量结算 —— 零售不录明细的入口）
+# ════════════════════════════════════════════════════════════
+ws = sheet('平台结算单')
+title(ws, '平 台 结 算 单（批量结算 · 扣费 · 到账对账）', 'AA',
+      '★ 零售订单几万几十万笔，明细永远不要往这套表里录。平台每期给你一张结算账单，'
+      '一个店一期就在这里录一行，所有扣费（佣金、推广、运费、其他）拆在各自的列里。\n'
+      '★ 【收入认定】决定这一行做不做账：\n'
+      '　 ①「结算单认收入」＝零售明细完全不录，收入直接由这张结算单产生 '
+      '（借 应收账款＋销售费用 / 贷 主营业务收入）。这时《销售登记》里一行都不用写，'
+      '成本靠《月末盘点与成本》整月倒轧 —— 这是量大零售最省事的路子。\n'
+      '　 ②「销售登记认收入」＝收入和扣费已经在《销售登记》按单（或按月汇总）记过了，'
+      '这张结算单**不生成任何凭证**，只当对账工具用：右边会自动把《销售登记》同店同期的金额拉过来比一比。\n'
+      '★ 收入算在「结算期间止」那个月，不是算在平台打款那天 —— 6 月的单就是 6 月的收入。\n'
+      '★ 到账：平台把净额打过来时，《资金流水》记一笔「收-平台结算」，关联单号填这里的结算单号 —— '
+      '一个月一个店就这一笔，不需要去关联几千个订单号。\n'
+      '★ 右边的对账只跟「客户 ＝ 这个店的平台结算往来单位」的销售行比 —— '
+      '同一个店里的批发单、线下单不会掺进来搅乱对账。\n'
+      '★ ★ 注意：平台账单里直接扣掉的推广费，填在这张表的「推广/流量费」列就行，'
+      '千万别再去《费用及其他》登记一遍，否则费用翻倍。')
+PSC = ['序号', '结算日期', '结算单号', '公司', '店铺', '平台', '结算期间起', '结算期间止', '订单笔数',
+       '销售货款(含税)', '退款退货', '平台佣金', '推广/流量费', '平台运费', '其他扣费', '扣费合计',
+       '应结净额', '结算单到账', '销售登记已回款', '未到账',
+       '收入认定', '收款账户', '销售登记同期收入', '差异', '对账状态', '备注', '年月']
+headers(ws, HDR, PSC)
+widths(ws, {'A': 6, 'B': 11, 'C': 14, 'D': 12, 'E': 14, 'F': 10, 'G': 12, 'H': 12, 'I': 10,
+            'J': 15, 'K': 12, 'L': 12, 'M': 13, 'N': 11, 'O': 11, 'P': 12,
+            'Q': 14, 'R': 13, 'S': 15, 'T': 13,
+            'U': 15, 'V': 17, 'W': 16, 'X': 13, 'Y': 16, 'Z': 34, 'AA': 9})
+Q_AUTO_REV = Q('零售汇总·收入由本表产生')
+Q_MATCH = Q('✔ 与销售登记一致')
+Q_DIFF = Q('✘ 差 ')
+Q_TAIL = Q(' —— 去查漏录/多录/退款算在哪一期')
+for i in range(N_PS):
+    r = PSS0 + i
+    src = T.PLATSET[i] if i < len(T.PLATSET) else None
+    put(ws, f'A{r}', f'=IF($B{r}="","",COUNT($B${PSS0}:$B{r}))', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'B{r}', src[0] if src else None, font=F_IN, fill=FILL_IN, fmt=DATEF)
+    put(ws, f'C{r}', src[1] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'D{r}', src[2] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'E{r}', src[3] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'F{r}', f'=IF($E{r}="","",IFERROR(INDEX({SP_PF},MATCH($E{r},{SP_N},0)),""))',
+        font=F_AUTO, fill=FILL_AUTO)
+    put(ws, f'G{r}', src[5] if src else None, font=F_IN, fill=FILL_IN, fmt=DATEF)
+    put(ws, f'H{r}', src[6] if src else None, font=F_IN, fill=FILL_IN, fmt=DATEF)
+    put(ws, f'I{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=NUM)
+    put(ws, f'J{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'K{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'L{r}', src[10] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'M{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'N{r}', src[12] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'O{r}', src[13] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'P{r}', f'=IF($B{r}="","",ROUND(N($L{r})+N($M{r})+N($N{r})+N($O{r}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF($B{r}="","",ROUND(N($J{r})-N($K{r})-N($P{r}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'R{r}', f'=IF($B{r}="","",{recv("C","D",r)})', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    pt_of_shop = f'IFERROR(INDEX({SP_PT},MATCH($E{r},{SP_N},0)),"")'
+    put(ws, f'S{r}', f'=IF($B{r}="","",ROUND(SUMIFS({SA("T")},{SA("D")},$D{r},{SA("E")},$E{r},'
+                     f'{SA("G")},{pt_of_shop},{SA("B")},">="&$G{r},{SA("B")},"<="&$H{r}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'T{r}', f'=IF($B{r}="","",ROUND(N($Q{r})-N($R{r})-N($S{r}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'U{r}', src[14] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'V{r}', src[15] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'W{r}', f'=IF($B{r}="","",ROUND(SUMIFS({SA("M")},{SA("D")},$D{r},{SA("E")},$E{r},'
+                     f'{SA("G")},{pt_of_shop},{SA("B")},">="&$G{r},{SA("B")},"<="&$H{r}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'X{r}', f'=IF($B{r}="","",IF($U{r}="结算单认收入","",'
+                     f'ROUND(N($J{r})-N($K{r})-N($W{r}),2)))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Y{r}', f'=IF($B{r}="","",IF($U{r}="结算单认收入",{Q_AUTO_REV},'
+                     f'IF(ABS(N($X{r}))<1,{Q_MATCH},{Q_DIFF}&TEXT(N($X{r}),"#,##0.00")&{Q_TAIL})))',
+        font=F_AUTO, fill=FILL_AUTO)
+    put(ws, f'Z{r}', src[16] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'AA{r}', f'={ym("H", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'AB{r}', f'=IF(OR($B{r}="",$U{r}<>"销售登记认收入"),0,ABS(N($X{r})))',
+        font=F_AUTO, fmt=MONEY, border=None)
+    put(ws, f'AC{r}', f'=IF($B{r}="",0,ROUND(N($T{r}),2))', font=F_AUTO, fmt=MONEY, border=None)
+    put(ws, f'AD{r}', f'=IF(OR($B{r}="",$U{r}<>"结算单认收入"),0,'
+                      f'IF(COUNTIFS({MT("B")},$D{r},{MT("C")},$AA{r},{MT("J")},">0")=0,1,0))',
+        font=F_AUTO, fmt='0', border=None)
+    put(ws, f'AE{r}', f'=IF(OR($B{r}="",N($M{r})<=0),0,'
+                      f'IF(COUNTIFS({EP("D")},$E{r},{EP("C")},$D{r},{EP("E")},"平台推广费",'
+                      f'{EP("P")},$AA{r})>0,1,0))', font=F_AUTO, fmt='0', border=None)
+for _c in ('AB', 'AC', 'AD', 'AE'):
+    ws.column_dimensions[_c].hidden = True
+PST = PSS1 + 1
+put(ws, f'A{PST}', '合  计', font=F_TOT, fill=FILL_TOT)
+for c in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'U', 'V', 'Y', 'Z', 'AA']:
+    put(ws, f'{c}{PST}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'W', 'X']:
+    put(ws, f'{c}{PST}', f'=ROUND(SUM({c}{PSS0}:{c}{PSS1}),2)', font=F_TOT, fill=FILL_TOT,
+        fmt=NUM if c == 'I' else MONEY)
+dv(ws, f'D{PSS0}:D{PSS1}', '=公司表')
+dv(ws, f'E{PSS0}:E{PSS1}', '=店铺表')
+dv(ws, f'U{PSS0}:U{PSS1}', '"' + ','.join(PS_REV_MODE) + '"',
+   '结算单认收入＝零售明细不录，收入由本表产生；销售登记认收入＝本表只对账不做账', block=True)
+dv(ws, f'V{PSS0}:V{PSS1}', '=资金账户表')
+ws.auto_filter.ref = f'A{HDR}:AA{PSS1}'
+ws.freeze_panes = 'D4'
+page(ws, titles=f'{HDR}:{HDR}')
+
+# ════════════════════════════════════════════════════════════
+# ⑬-4 月末盘点与成本（成本的兜底出口）
+# ════════════════════════════════════════════════════════════
+ws = sheet('月末盘点与成本')
+title(ws, '月 末 盘 点 与 成 本', 'N',
+      '★ 这是成本的兜底出口。不管你在《查询设置》里选哪种成本方式，只要月末盘了一次库存，'
+      '账面和实盘的差额就会自动出一张「借 主营业务成本 / 贷 库存商品」的调整凭证，把账做实。\n'
+      '★ 【实盘金额】留空 ＝ 这个月不盘点，不出任何凭证，账面成本按各登记表结转的数走。\n'
+      '★ 典型用法：\n'
+      '　 · ERP 数据不准、又不想一单一单算成本 —— 《查询设置》选「C 月末盘点倒轧」，'
+      '销售登记一分成本都不结转，整月成本＝期初 ＋ 本月进货 − 月末实盘，一次算清；\n'
+      '　 · 零售走《平台结算单》认收入（没有销售登记行、账面库存不会减）—— 也是靠这张表把成本补上；\n'
+      '　 · 平时按加权平均自动结转，季末/年末盘一次纠偏 —— 差额自动调，不用手工做分录。\n'
+      '★ 「期初账面存货」是自动滚的：《期初余额》的库存商品 ＋ 本月之前所有的采购入库 − 销售结转 − 受托代发结转 '
+      '± 手工存货调整 − 之前月份已经调过的盘点差异。中间某个月没建行也不会漏数。\n'
+      '★ 盘点差异是正数 ＝ 账面比实盘多，要补成本（东西少了）；负数 ＝ 账面比实盘少，冲回成本。')
+MTC = ['序号', '公司', '年月', '期初账面存货', '本月采购入库(实际成本)', '本月销售结转成本',
+       '本月受托代发结转成本', '本月手工存货调整', '账面月末存货',
+       '实盘金额(手填·留空＝不盘)', '盘点差异', '差异率', '状态 / 提醒', '备注']
+headers(ws, HDR, MTC)
+widths(ws, {'A': 6, 'B': 12, 'C': 10, 'D': 16, 'E': 20, 'F': 18,
+            'G': 20, 'H': 17, 'I': 16, 'J': 22, 'K': 14, 'L': 10, 'M': 34, 'N': 30})
+Q_NOCOUNT = Q('这个月没盘点（实盘金额留空）—— 不出调整凭证')
+Q_EQ = Q('✔ 账实相符')
+Q_SHORT = Q('账面比实盘多 ')
+Q_SHORT2 = Q('，已自动补进主营业务成本')
+Q_OVER = Q('账面比实盘少 ')
+Q_OVER2 = Q('，已自动冲回主营业务成本（先查是不是漏登了采购）')
+OPINV = (lambda r: f'IFERROR(SUMIFS({OPEN_D},{OPEN_SUB},"库存商品",{OPEN_CO},$B{r})'
+                   f'-SUMIFS({OPEN_C},{OPEN_SUB},"库存商品",{OPEN_CO},$B{r}),0)')
+# 期初账面存货直接从各登记表按「年月 < 本月」滚出来 —— 这样中间某个月没建行也不会漏数
+MT_PRIOR = (lambda r:
+    f'SUMIFS({PU("P")},{PU("D")},$B{r},{PU("AA")},"<"&$C{r})'
+    f'-SUMIFS({SA("Q")},{SA("D")},$B{r},{SA("AC")},"<"&$C{r})'
+    f'-SUMIFS({TR("V")},{TR("D")},$B{r},{TR("AD")},"<"&$C{r})'
+    f'+SUMIFS({MV("I")},{MV("F")},"库存商品",{MV("C")},$B{r},{MV("N")},"<"&$C{r})'
+    f'-SUMIFS({MV("J")},{MV("F")},"库存商品",{MV("C")},$B{r},{MV("N")},"<"&$C{r})'
+    f'-SUMIFS({MT("K")},{MT("B")},$B{r},{MT("C")},"<"&$C{r})')
+for i in range(N_MC):
+    r = MTS0 + i
+    src = T.STOCKTAKE[i] if i < len(T.STOCKTAKE) else None
+    put(ws, f'A{r}', f'=IF($B{r}="","",COUNT($C${MTS0}:$C{r}))', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'B{r}', src[0] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'C{r}', src[1] if src else None, font=F_IN, fill=FILL_IN, fmt=YM)
+    put(ws, f'D{r}', f'=IF($B{r}="","",ROUND({OPINV(r)}+{MT_PRIOR(r)},2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'E{r}', f'=IF($B{r}="","",ROUND(SUMIFS({PU("P")},{PU("D")},$B{r},{PU("AA")},$C{r}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'F{r}', f'=IF($B{r}="","",ROUND(SUMIFS({SA("Q")},{SA("D")},$B{r},{SA("AC")},$C{r}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'G{r}', f'=IF($B{r}="","",ROUND(SUMIFS({TR("V")},{TR("D")},$B{r},{TR("AD")},$C{r}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'H{r}', f'=IF($B{r}="","",ROUND(SUMIFS({MV("I")},{MV("F")},"库存商品",{MV("C")},$B{r},'
+                     f'{MV("N")},$C{r})-SUMIFS({MV("J")},{MV("F")},"库存商品",{MV("C")},$B{r},'
+                     f'{MV("N")},$C{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'I{r}', f'=IF($B{r}="","",ROUND(N($D{r})+N($E{r})-N($F{r})-N($G{r})+N($H{r}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'J{r}', src[2] if src and src[2] != '' else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'K{r}', f'=IF(OR($B{r}="",$J{r}=""),"",ROUND(N($I{r})-N($J{r}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'L{r}', f'=IF(OR($B{r}="",$J{r}="",ROUND(N($I{r}),2)=0),"",ROUND(N($K{r})/$I{r},4))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=PCT)
+    put(ws, f'M{r}', f'=IF($B{r}="","",IF($J{r}="",{Q_NOCOUNT},'
+                     f'IF(ROUND(N($K{r}),2)=0,{Q_EQ},'
+                     f'IF(N($K{r})>0,{Q_SHORT}&TEXT(N($K{r}),"#,##0.00")&{Q_SHORT2},'
+                     f'{Q_OVER}&TEXT(-N($K{r}),"#,##0.00")&{Q_OVER2}))))',
+        font=F_AUTO, fill=FILL_AUTO, align=CL)
+    put(ws, f'N{r}', src[3] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'O{r}', f'=IF(OR($B{r}="",$J{r}="",ROUND(N($I{r}),2)=0),0,'
+                     f'IF(COUNTIFS({PS("D")},$B{r},{PS("AA")},$C{r},{PS("U")},"结算单认收入")>0,0,'
+                     f'ABS(N($K{r})/$I{r})))',
+        font=F_AUTO, fmt=PCT, border=None)
+ws.column_dimensions['O'].hidden = True
+MTT = MTS1 + 1
+put(ws, f'A{MTT}', '合  计', font=F_TOT, fill=FILL_TOT)
+for c in ['B', 'C', 'D', 'I', 'J', 'L', 'M', 'N']:
+    put(ws, f'{c}{MTT}', None, font=F_TOT, fill=FILL_TOT)
+for c in ['E', 'F', 'G', 'H', 'K']:
+    put(ws, f'{c}{MTT}', f'=ROUND(SUM({c}{MTS0}:{c}{MTS1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+dv(ws, f'B{MTS0}:B{MTS1}', '=公司表')
+ws.auto_filter.ref = f'A{HDR}:N{MTS1}'
+ws.freeze_panes = 'D4'
+page(ws, titles=f'{HDR}:{HDR}')
+
+print('  ✓ 返利登记 / 一件代发结算 / 受托代发登记 / 平台结算单 / 月末盘点与成本')
+# ════════════════════════════════════════════════════════════
 # ⑭ 资金流水
 # ════════════════════════════════════════════════════════════
 ws = sheet('资金流水')
-title(ws, '资 金 流 水', 'R',
+title(ws, '资 金 流 水', 'S',
       '★ 所有进出钱的动作都记在这里。「业务类型」决定对方科目和现金流类别（见《资金规则》）；'
       '要例外就在「科目手工覆盖」里填一个科目名。\n'
-      '★ 关联单号很重要：填了采购单号/销售单号/返利单号/代发结算单号/费用单号，'
+      '★ 关联单号：填了采购单号/销售单号/返利单号/代发结算单号/受托代发单号/平台结算单号/费用单号，'
       '那边的「已付/已回」才会自动跟着动，《收付款核销中心》也才对得上。\n'
+      '　 ——【单号不填也不会错账】：钱照样按「业务类型」进对应科目，《综合往来对账》按往来单位汇总照样准，'
+      '只是单据级的核销跟不了。零售那种一天几千单的，本来就不该按单跟，直接走《平台结算单》一个月一笔。\n'
+      '★ 「店铺」是给平台结算准备的：平台一次性把一期货款打过来，填上店铺，'
+      '《店铺利润分析》《平台结算单》才知道这笔钱算哪个店的。\n'
       '★ 「已回款」只认「收-」开头的业务类型，「已付款」只认「付-」开头的 —— '
       '所以一件代发那种同一个单号既收客户钱、又付代发商钱的，两边各算各的，不会互相抵掉。\n'
       '★ 平台货款提现到银行：记两行 —— 平台户「内部转账-转出」＋银行户「内部转账-转入」，'
       '两行都要填「对方账户」，这样不会被当成收入或费用。')
-CAC = ['序号', '日期', '公司', '资金账户', '业务类型', '往来单位', '关联单号', '收入金额', '支出金额',
-       '账户余额', '摘要', '对方账户(仅内部转账)', '科目手工覆盖',
+CAC = ['序号', '日期', '公司', '店铺', '资金账户', '业务类型', '往来单位', '关联单号',
+       '收入金额', '支出金额', '账户余额', '摘要', '对方账户(仅内部转账)', '科目手工覆盖',
        '账户对应科目', '对方科目', '现金流类别', '备注', '年月']
 headers(ws, HDR, CAC)
-widths(ws, {'A': 6, 'B': 11, 'C': 12, 'D': 18, 'E': 16, 'F': 20, 'G': 14, 'H': 13, 'I': 13,
-            'J': 14, 'K': 22, 'L': 18, 'M': 16, 'N': 20, 'O': 22, 'P': 12, 'Q': 26, 'R': 9})
+widths(ws, {'A': 6, 'B': 11, 'C': 12, 'D': 14, 'E': 18, 'F': 16, 'G': 20, 'H': 14,
+            'I': 13, 'J': 13, 'K': 14, 'L': 22, 'M': 18, 'N': 16,
+            'O': 20, 'P': 22, 'Q': 12, 'R': 26, 'S': 9})
 for i in range(N_CASH):
     r = K0 + i
     src = T.CASH[i] if i < len(T.CASH) else None
     put(ws, f'A{r}', f'=IF($B{r}="","",COUNT($B${K0}:$B{r}))', font=F_AUTO, fill=FILL_AUTO, fmt='0')
     put(ws, f'B{r}', src[0] if src else None, font=F_IN, fill=FILL_IN, fmt=DATEF)
     put(ws, f'C{r}', src[1] if src else None, font=F_IN, fill=FILL_IN)
-    put(ws, f'D{r}', src[2] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'E{r}', src[3] if src else None, font=F_IN, fill=FILL_IN)
-    put(ws, f'F{r}', pn(src[4]) if src and src[4] else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'G{r}', src[5] if src else None, font=F_IN, fill=FILL_IN)
-    put(ws, f'H{r}', src[6] if src and src[6] else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'D{r}', src[2] if src and src[2] else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'E{r}', src[3] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'F{r}', src[4] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'G{r}', pn(src[5]) if src and src[5] else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'H{r}', src[6] if src else None, font=F_IN, fill=FILL_IN)
     put(ws, f'I{r}', src[7] if src and src[7] else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
-    put(ws, f'J{r}', f'=IF($D{r}="","",ROUND(IFERROR(INDEX({OPA_V},MATCH($D{r},{OPA_N},0)),0)'
-                     f'+SUMIFS($H${K0}:$H{r},$D${K0}:$D{r},$D{r})-SUMIFS($I${K0}:$I{r},$D${K0}:$D{r},$D{r}),2))',
+    put(ws, f'J{r}', src[8] if src and src[8] else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
+    put(ws, f'K{r}', f'=IF($E{r}="","",ROUND(IFERROR(INDEX({OPA_V},MATCH($E{r},{OPA_N},0)),0)'
+                     f'+SUMIFS($I${K0}:$I{r},$E${K0}:$E{r},$E{r})-SUMIFS($J${K0}:$J{r},$E${K0}:$E{r},$E{r}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'K{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'L{r}', src[9] if src and src[9] else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'L{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, align=CL)
     put(ws, f'M{r}', src[10] if src and src[10] else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'N{r}', f'=IF($D{r}="","",IFERROR(INDEX({ACC_SUBJ},MATCH($D{r},{ACC_N},0)),"★账户档案里没有"))',
+    put(ws, f'N{r}', src[11] if src and src[11] else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'O{r}', f'=IF($E{r}="","",IFERROR(INDEX({ACC_SUBJ},MATCH($E{r},{ACC_N},0)),"★账户档案里没有"))',
         font=F_AUTO, fill=FILL_AUTO, align=CL)
-    put(ws, f'O{r}', f'=IF($B{r}="","",IF($M{r}<>"",$M{r},'
-                     f'IF(LEFT($E{r},4)="内部转账",IFERROR(INDEX({ACC_SUBJ},MATCH($L{r},{ACC_N},0)),"★请填对方账户"),'
-                     f'IFERROR(INDEX({RULE_S},MATCH($E{r},{RULE_T},0)),"★资金规则里没有这个业务类型"))))',
+    put(ws, f'P{r}', f'=IF($B{r}="","",IF($N{r}<>"",$N{r},'
+                     f'IF(LEFT($F{r},4)="内部转账",IFERROR(INDEX({ACC_SUBJ},MATCH($M{r},{ACC_N},0)),"★请填对方账户"),'
+                     f'IFERROR(INDEX({RULE_S},MATCH($F{r},{RULE_T},0)),"★资金规则里没有这个业务类型"))))',
         font=F_AUTO, fill=FILL_AUTO, align=CL)
-    put(ws, f'P{r}', f'=IF($B{r}="","",IF(LEFT($E{r},4)="内部转账","不计入",'
-                     f'IFERROR(INDEX({RULE_C},MATCH($E{r},{RULE_T},0)),"经营活动")))',
+    put(ws, f'Q{r}', f'=IF($B{r}="","",IF(LEFT($F{r},4)="内部转账","不计入",'
+                     f'IFERROR(INDEX({RULE_C},MATCH($F{r},{RULE_T},0)),"经营活动")))',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'Q{r}', src[11] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'R{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'R{r}', src[12] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'S{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 KT = K1 + 1
 put(ws, f'A{KT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFGJKLMNOPQR'):
+for c in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S']:
     put(ws, f'{c}{KT}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['H', 'I']:
+for c in ['I', 'J']:
     put(ws, f'{c}{KT}', f'=ROUND(SUM({c}{K0}:{c}{K1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
 dv(ws, f'C{K0}:C{K1}', '=公司表')
-dv(ws, f'D{K0}:D{K1}', '=资金账户表')
-dv(ws, f'E{K0}:E{K1}', '=资金业务类型表', '决定对方科目和现金流类别')
-dv(ws, f'F{K0}:F{K1}', '=往来单位表')
-dv(ws, f'L{K0}:L{K1}', '=资金账户表', '只有内部转账要填')
-dv(ws, f'M{K0}:M{K1}', '=科目名称表', '留空＝按资金规则自动判')
-ws.auto_filter.ref = f'A{HDR}:R{K1}'
-ws.freeze_panes = 'D4'
+dv(ws, f'D{K0}:D{K1}', '=店铺表', '平台结算/店铺专属收支才填，一般留空')
+dv(ws, f'E{K0}:E{K1}', '=资金账户表')
+dv(ws, f'F{K0}:F{K1}', '=资金业务类型表', '决定对方科目和现金流类别')
+dv(ws, f'G{K0}:G{K1}', '=往来单位表')
+dv(ws, f'M{K0}:M{K1}', '=资金账户表', '只有内部转账要填')
+dv(ws, f'N{K0}:N{K1}', '=科目名称表', '留空＝按资金规则自动判')
+ws.auto_filter.ref = f'A{HDR}:S{K1}'
+ws.freeze_panes = 'E4'
 page(ws, titles=f'{HDR}:{HDR}')
 
-print('  ✓ 返利登记 / 一件代发结算 / 资金流水')
-
+print('  ✓ 资金流水')
 # ════════════════════════════════════════════════════════════
 # ⑮ 发票台账
 # ════════════════════════════════════════════════════════════
 ws = sheet('发票台账')
-title(ws, '发 票 台 账（进项 / 销项）', 'N',
-      '★ 这张表只管「票」，不生成凭证 —— 税额在采购、销售、费用登记时就已经入账了。\n'
+title(ws, '发 票 台 账（进项 / 销项 · 只管票，不做账）', 'L',
+      '★ 内帐一律按含税金额记账，税额不单独入账，所以这张表不生成任何凭证 —— 它只回答一件事：'
+      '「这一单的票收齐了没有／开出去了没有」。\n'
+      '★ 金额直接填票面的价税合计。税率那一列是备查的，填不填都不影响账。\n'
       '★ 填了「关联单号」，采购登记/销售登记的「票据状态」才会从「未开票」变成「已开票」，'
       '《异常预警中心》的缺票提醒也才消得掉。')
-IVC = ['序号', '日期', '公司', '票据类型', '往来单位', '发票号码', '不含税金额', '税率', '税额',
-       '价税合计', '关联单号', '状态', '备注', '年月']
+IVC = ['序号', '日期', '公司', '票据类型', '往来单位', '发票号码', '发票金额(价税合计)', '税率(备查)',
+       '关联单号', '状态', '备注', '年月']
 headers(ws, HDR, IVC)
-widths(ws, {'A': 6, 'B': 11, 'C': 12, 'D': 10, 'E': 22, 'F': 15, 'G': 14, 'H': 8, 'I': 12,
-            'J': 14, 'K': 14, 'L': 11, 'M': 30, 'N': 9})
+widths(ws, {'A': 6, 'B': 11, 'C': 12, 'D': 10, 'E': 22, 'F': 15, 'G': 17, 'H': 11,
+            'I': 14, 'J': 11, 'K': 30, 'L': 9})
 for i in range(N_INV):
     r = V0 + i
     src = T.INVOICE[i] if i < len(T.INVOICE) else None
@@ -1016,44 +1339,43 @@ for i in range(N_INV):
     put(ws, f'F{r}', src[4] if src else None, font=F_IN, fill=FILL_IN)
     put(ws, f'G{r}', src[5] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
     put(ws, f'H{r}', src[6] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'I{r}', f'=IF($G{r}="","",ROUND($G{r}*N($H{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'J{r}', f'=IF($G{r}="","",ROUND($G{r}+N($I{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'K{r}', src[7] if src else None, font=F_IN, fill=FILL_IN)
-    put(ws, f'L{r}', src[8] if src else None, font=F_IN, fill=FILL_IN)
-    put(ws, f'M{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'N{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'I{r}', src[7] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'J{r}', src[8] if src else None, font=F_IN, fill=FILL_IN)
+    put(ws, f'K{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'L{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 VT = V1 + 1
 put(ws, f'A{VT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFHKLMN'):
+for c in ['B', 'C', 'D', 'E', 'F', 'H', 'I', 'J', 'K', 'L']:
     put(ws, f'{c}{VT}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['G', 'I', 'J']:
-    put(ws, f'{c}{VT}', f'=ROUND(SUM({c}{V0}:{c}{V1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'G{VT}', f'=ROUND(SUM(G{V0}:G{V1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
 dv(ws, f'C{V0}:C{V1}', '=公司表')
 dv(ws, f'D{V0}:D{V1}', '=票据类型表')
 dv(ws, f'E{V0}:E{V1}', '=往来单位表')
 dv(ws, f'H{V0}:H{V1}', '=税率表')
-dv(ws, f'L{V0}:L{V1}', '=发票状态表')
-ws.auto_filter.ref = f'A{HDR}:N{V1}'
+dv(ws, f'J{V0}:J{V1}', '=发票状态表')
+ws.auto_filter.ref = f'A{HDR}:L{V1}'
 ws.freeze_panes = 'C4'
 page(ws, titles=f'{HDR}:{HDR}')
-
 # ════════════════════════════════════════════════════════════
 # ⑯ 费用及其他
 # ════════════════════════════════════════════════════════════
 ws = sheet('费用及其他')
-title(ws, '费 用 及 其 他', 'S',
+title(ws, '费 用 及 其 他', 'P',
+      '★ 含税口径：金额直接填发票/账单上的价税合计，不拆税额。\n'
       '★ 一律按权责发生制记：先在这里登记（借 费用科目 / 贷 应付账款），付钱的时候再到《资金流水》'
       '记「付-费用」并填上这里的费用单号，应付就冲掉了 —— 跟采购是同一套路。\n'
       '★ 填了「店铺」的费用会进《店铺利润分析》；不填就算公司共同费用。\n'
       '★ 想把某笔支出记成资产而不是费用（比如买设备），把费用项目选成「购置固定资产」即可，'
-      '对应科目会自动变成「固定资产」。')
+      '对应科目会自动变成「固定资产」。\n'
+      '★ ★ 平台账单里**直接扣掉**的推广费/佣金，请填到《平台结算单》或《销售登记》的扣费列，'
+      '不要在这里再登记一遍 —— 那样费用会翻倍。这里只记单独付钱的费用。')
 EPC = ['序号', '日期', '公司', '店铺', '费用项目', '往来单位', '费用单号', '摘要',
-       '不含税金额', '税率', '税额', '价税合计', '借方科目(费用/资产)', '贷方科目(挂账)',
+       '金额(含税)', '借方科目(费用/资产)', '贷方科目(挂账)',
        '已付/已结', '未付金额', '付款状态', '备注', '年月']
 headers(ws, HDR, EPC)
 widths(ws, {'A': 6, 'B': 11, 'C': 12, 'D': 14, 'E': 18, 'F': 20, 'G': 14, 'H': 22,
-            'I': 14, 'J': 8, 'K': 12, 'L': 14, 'M': 20, 'N': 20,
-            'O': 13, 'P': 13, 'Q': 11, 'R': 26, 'S': 9})
+            'I': 15, 'J': 20, 'K': 20,
+            'L': 13, 'M': 13, 'N': 11, 'O': 26, 'P': 9})
 for i in range(N_EXP):
     r = E0 + i
     src = T.EXPENSE[i] if i < len(T.EXPENSE) else None
@@ -1066,37 +1388,32 @@ for i in range(N_EXP):
     put(ws, f'G{r}', src[5] if src else None, font=F_IN, fill=FILL_IN)
     put(ws, f'H{r}', src[6] if src else None, font=F_IN, fill=FILL_IN, align=CL)
     put(ws, f'I{r}', src[7] if src else None, font=F_IN, fill=FILL_IN, fmt=MONEY)
-    put(ws, f'J{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, fmt=PCT)
-    put(ws, f'K{r}', f'=IF($I{r}="","",ROUND($I{r}*N($J{r}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'L{r}', f'=IF($I{r}="","",ROUND($I{r}+N($K{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'M{r}', f'=IF($E{r}="","",IFERROR(INDEX({EX_S},MATCH($E{r},{EX_I},0)),"★基础资料里没配借方科目"))',
+    put(ws, f'J{r}', f'=IF($E{r}="","",IFERROR(INDEX({EX_S},MATCH($E{r},{EX_I},0)),"★基础资料里没配借方科目"))',
         font=F_AUTO, fill=FILL_AUTO, align=CL)
-    put(ws, f'N{r}', f'=IF($E{r}="","",IFERROR(INDEX({EX_C},MATCH($E{r},{EX_I},0)),"应付账款"))',
+    put(ws, f'K{r}', f'=IF($E{r}="","",IFERROR(INDEX({EX_C},MATCH($E{r},{EX_I},0)),"应付账款"))',
         font=F_AUTO, fill=FILL_AUTO, align=CL)
-    put(ws, f'O{r}', f'=IF($B{r}="","",ROUND({paid("G","C",r)}+{off_ap("G","C",r)},2))',
+    put(ws, f'L{r}', f'=IF($B{r}="","",ROUND({paid("G","C",r)}+{off_ap("G","C",r)},2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'P{r}', f'=IF($B{r}="","",ROUND(N($L{r})-N($O{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Q{r}', f'=IF($B{r}="","",{st_pay(f"N($L{r})", f"N($P{r})", f"N($O{r})", r)})',
+    put(ws, f'M{r}', f'=IF($B{r}="","",ROUND(N($I{r})-N($L{r}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'N{r}', f'=IF($B{r}="","",{st_pay(f"N($I{r})", f"N($M{r})", f"N($L{r})", r)})',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'R{r}', src[9] if src else None, font=F_IN, fill=FILL_IN, align=CL)
-    put(ws, f'S{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
+    put(ws, f'O{r}', src[8] if src else None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'P{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
 ET = E1 + 1
 put(ws, f'A{ET}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in list('BCDEFGHJMNQRS'):
+for c in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'N', 'O', 'P']:
     put(ws, f'{c}{ET}', None, font=F_TOT, fill=FILL_TOT)
-for c in ['I', 'K', 'L', 'O', 'P']:
+for c in ['I', 'L', 'M']:
     put(ws, f'{c}{ET}', f'=ROUND(SUM({c}{E0}:{c}{E1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
 dv(ws, f'C{E0}:C{E1}', '=公司表')
 dv(ws, f'D{E0}:D{E1}', '=店铺表', '店铺专属费用才填')
 dv(ws, f'E{E0}:E{E1}', '=费用项目表')
 dv(ws, f'F{E0}:F{E1}', '=往来单位表')
-dv(ws, f'J{E0}:J{E1}', '=税率表')
-dv(ws, f'M{E0}:M{E1}', '=科目名称表')
-dv(ws, f'N{E0}:N{E1}', '=科目名称表')
-ws.auto_filter.ref = f'A{HDR}:S{E1}'
+dv(ws, f'J{E0}:J{E1}', '=科目名称表')
+dv(ws, f'K{E0}:K{E1}', '=科目名称表')
+ws.auto_filter.ref = f'A{HDR}:P{E1}'
 ws.freeze_panes = 'C4'
 page(ws, titles=f'{HDR}:{HDR}')
-
 # ════════════════════════════════════════════════════════════
 # ⑰ 手工凭证
 # ════════════════════════════════════════════════════════════
@@ -1134,13 +1451,13 @@ for i in range(N_MAN):
         font=F_AUTO, fill=FILL_AUTO)
     put(ws, f'M{r}', src[10] if src else None, font=F_IN, fill=FILL_IN, align=CL)
     put(ws, f'N{r}', f'={ym("B", r)}', font=F_AUTO, fill=FILL_AUTO, fmt=YM)
-MT = M1 + 1
-put(ws, f'A{MT}', '合  计', font=F_TOT, fill=FILL_TOT)
+MVT = M1 + 1
+put(ws, f'A{MVT}', '合  计', font=F_TOT, fill=FILL_TOT)
 for c in list('BCDEFGHKLMN'):
-    put(ws, f'{c}{MT}', None, font=F_TOT, fill=FILL_TOT)
+    put(ws, f'{c}{MVT}', None, font=F_TOT, fill=FILL_TOT)
 for c in ['I', 'J']:
-    put(ws, f'{c}{MT}', f'=ROUND(SUM({c}{M0}:{c}{M1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-put(ws, f'K{MT}', f'=IF(ROUND($I{MT}-$J{MT},2)=0,"✔ 全部平","✘ 合计差 "&TEXT($I{MT}-$J{MT},"#,##0.00"))',
+    put(ws, f'{c}{MVT}', f'=ROUND(SUM({c}{M0}:{c}{M1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'K{MVT}', f'=IF(ROUND($I{MVT}-$J{MVT},2)=0,"✔ 全部平","✘ 合计差 "&TEXT($I{MVT}-$J{MVT},"#,##0.00"))',
     font=F_TOT, fill=FILL_TOT)
 dv(ws, f'C{M0}:C{M1}', '=公司表')
 dv(ws, f'F{M0}:F{M1}', '=科目名称表')
@@ -1155,15 +1472,15 @@ print('  ✓ 发票台账 / 费用及其他 / 手工凭证')
 # ════════════════════════════════════════════════════════════
 # ⑱ 自动凭证 —— 把业务登记按固定规则展开成分录行
 # ════════════════════════════════════════════════════════════
-AV_LINES = {'采购': 4, '销售': 7, '返利': 2, '代发': 8, '资金': 2, '费用': 3}
-AV_ROWS = (N_PUR * 4 + N_SAL * 7 + N_RBT * 2 + N_DRP * 8 + N_CASH * 2 + N_EXP * 3)
-A0 = 4
-A1 = A0 + AV_ROWS - 1
+AV_ROWS = (N_PUR * 3 + N_SAL * 6 + N_RBT * 2 + N_DRP * 6 + N_TRS * 5
+           + N_PS * 3 + N_MC * 2 + N_CASH * 2 + N_EXP * 2)
+A0, A1 = D0, D0 + AV_ROWS - 1
 
 ws = sheet('自动凭证')
 title(ws, '自 动 凭 证（由业务登记自动展开 · 请勿手工修改）', 'L',
-      '★ 采购、销售、返利、一件代发、资金、费用每记一行，这里就自动展开成对应的分录行。'
-      '金额是 0 的分录行自动隐去，所以这张表上看到的都是真有内容的。\n'
+      '★ 采购、销售、返利、一件代发、受托代发、平台结算、月末盘点、资金、费用每记一行，'
+      '这里就自动展开成对应的分录行。金额是 0 的分录行自动隐去，所以这张表上看到的都是真有内容的。\n'
+      '★ 全表含税口径，没有进项/销项税分录 —— 缴出去的税在《资金流水》选「付-税费-xx」，直接进费用。\n'
       '★ 它和《手工凭证》一起，是《科目余额表》和三张报表唯一的取数来源 —— '
       '所以业务登记页改一个数，报表立刻跟着变，不用再录一遍总账。\n'
       '★ 展开规则写在《使用说明》里；想改口径就改那边的规则，别在这张表上手工改数。')
@@ -1173,8 +1490,6 @@ headers(ws, HDR, AVC)
 widths(ws, {'A': 7, 'B': 11, 'C': 12, 'D': 18, 'E': 30, 'F': 30, 'G': 20, 'H': 14,
             'I': 14, 'J': 14, 'K': 12, 'L': 9})
 
-def Q(s):
-    return '"' + s.replace('"', '""') + '"'
 
 def emit(ws, r, active, date_f, co_f, vno_f, sum_f, subj_f, party_f, ref_f, dr_f, cr_f, tag):
     """写一条自动凭证行。active 为假（源行空 / 本行金额为 0）时整行留空"""
@@ -1193,43 +1508,40 @@ def emit(ws, r, active, date_f, co_f, vno_f, sum_f, subj_f, party_f, ref_f, dr_f
     put(ws, f'L{r}', f'=IF(OR($B{r}="",NOT(ISNUMBER($B{r}))),"",--TEXT($B{r},"yyyymm"))',
         font=F_AUTO, fill=FILL_AUTO, fmt=YM, border=None)
 
+
 r = A0
-# —— 采购：库存商品 / 进项税 / 应收返利 ← 应付账款 ——
+# —— 采购：库存商品（已扣返利）＋ 应收返利 ← 应付账款（含税全额）——
 for i in range(N_PUR):
     sr = P0 + i
-    S_ = f'N(采购登记!$S{sr})'; O_ = f'N(采购登记!$O{sr})'
-    R_ = f'N(采购登记!$R{sr})'; L_ = f'N(采购登记!$L{sr})'
+    P_ = f'N(采购登记!$P{sr})'; O_ = f'N(采购登记!$O{sr})'; L_ = f'N(采购登记!$L{sr})'
     date_f = f'采购登记!$B{sr}'; co_f = f'采购登记!$D{sr}'
     vno_f = f'"采-"&采购登记!$C{sr}'; ref_f = f'采购登记!$C{sr}'
     party_f = f'采购登记!$F{sr}'
     dead = f'采购登记!$B{sr}=""'
     lines = [
-        (Q('库存商品'), S_, '0', f'"采购入库 "&采购登记!$H{sr}'),
-        (Q('应交税费—应交增值税(进项税额)'), O_, '0', '"采购进项税额"'),
-        (Q('其他应收款—应收返利'), R_, '0', '"按约定预提采购返利"'),
+        (Q('库存商品'), P_, '0', f'"采购入库（已扣返利）"&采购登记!$H{sr}'),
+        (Q('其他应收款—应收返利'), O_, '0', '"按约定预提采购返利"'),
         (Q('应付账款'), '0', L_, f'"采购应付 "&采购登记!$F{sr}'),
     ]
     for subj, dr, cr, smy in lines:
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
              subj, party_f, ref_f, dr, cr, '采购登记')
         r += 1
-# —— 销售：应收 / 收入 / 销项 / 成本 / 库存 / 平台扣费 ——
+# —— 销售：应收 / 收入（含税）/ 成本 / 库存 / 平台扣费 ——
 for i in range(N_SAL):
     sr = S0 + i
-    M_ = f'N(销售登记!$M{sr})'; O_ = f'N(销售登记!$O{sr})'
-    P_ = f'N(销售登记!$P{sr})'; T_ = f'N(销售登记!$T{sr})'; Qq = f'N(销售登记!$Q{sr})'
+    M_ = f'N(销售登记!$M{sr})'; Qc = f'N(销售登记!$Q{sr})'; O_ = f'N(销售登记!$O{sr})'
     date_f = f'销售登记!$B{sr}'; co_f = f'销售登记!$D{sr}'
     vno_f = f'"销-"&销售登记!$C{sr}'; ref_f = f'销售登记!$C{sr}'
     party_f = f'销售登记!$G{sr}'
     dead = f'销售登记!$B{sr}=""'
     lines = [
         (Q('应收账款'), M_, '0', f'"销售 "&销售登记!$I{sr}'),
-        (Q('主营业务收入'), '0', O_, f'"确认收入 "&销售登记!$E{sr}'),
-        (Q('应交税费—应交增值税(销项税额)'), '0', P_, '"销项税额"'),
-        (Q('主营业务成本'), T_, '0', f'"结转销售成本 "&销售登记!$I{sr}'),
-        (Q('库存商品'), '0', T_, '"结转销售成本"'),
-        (Q('销售费用'), Qq, '0', '"平台扣费（佣金/技术服务费）"'),
-        (Q('应收账款'), '0', Qq, '"平台扣费直接从货款里扣"'),
+        (Q('主营业务收入'), '0', M_, f'"确认收入（含税）"&销售登记!$E{sr}'),
+        (Q('主营业务成本'), Qc, '0', f'"结转销售成本 "&销售登记!$I{sr}'),
+        (Q('库存商品'), '0', Qc, '"结转销售成本"'),
+        (Q('销售费用'), O_, '0', '"平台扣费（佣金/技术服务费）"'),
+        (Q('应收账款'), '0', O_, '"平台扣费直接从货款里扣"'),
     ]
     for subj, dr, cr, smy in lines:
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
@@ -1251,65 +1563,118 @@ for i in range(N_RBT):
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
              subj, party_f, ref_f, dr, cr, '返利登记')
         r += 1
-# —— 一件代发：收入/成本两头都走，但不碰库存商品 ——
+# —— 一件代发（我卖·别人发）：收入/成本两头都走，但不碰库存商品 ——
 for i in range(N_DRP):
     sr = F0 + i
-    L_ = f'N(一件代发结算!$L{sr})'; N_ = f'N(一件代发结算!$N{sr})'
-    O_ = f'N(一件代发结算!$O{sr})'; S_ = f'N(一件代发结算!$S{sr})'
-    T_ = f'N(一件代发结算!$T{sr})'; Qq = f'N(一件代发结算!$Q{sr})'; U_ = f'N(一件代发结算!$U{sr})'
+    L_ = f'N(一件代发结算!$L{sr})'; N_ = f'N(一件代发结算!$N{sr})'; O_ = f'N(一件代发结算!$O{sr})'
     date_f = f'一件代发结算!$B{sr}'; co_f = f'一件代发结算!$D{sr}'
     vno_f = f'"代-"&一件代发结算!$C{sr}'; ref_f = f'一件代发结算!$C{sr}'
     cus = f'一件代发结算!$G{sr}'; sup = f'一件代发结算!$F{sr}'
     dead = f'一件代发结算!$B{sr}=""'
     lines = [
         (Q('应收账款'), L_, '0', f'"一件代发销售 "&一件代发结算!$I{sr}', cus),
-        (Q('主营业务收入'), '0', N_, f'"确认代发收入 "&一件代发结算!$E{sr}', cus),
-        (Q('应交税费—应交增值税(销项税额)'), '0', O_, '"代发销项税额"', cus),
-        (Q('主营业务成本'), S_, '0', f'"代发成本 "&一件代发结算!$F{sr}', sup),
-        (Q('应交税费—应交增值税(进项税额)'), T_, '0', '"代发进项税额"', sup),
-        (Q('应付账款'), '0', Qq, f'"应付代发商 "&一件代发结算!$F{sr}', sup),
-        (Q('销售费用'), U_, '0', '"平台扣费（代发）"', cus),
-        (Q('应收账款'), '0', U_, '"平台扣费直接从货款里扣"', cus),
+        (Q('主营业务收入'), '0', L_, f'"确认代发收入（含税）"&一件代发结算!$E{sr}', cus),
+        (Q('主营业务成本'), N_, '0', f'"代发成本 "&一件代发结算!$F{sr}', sup),
+        (Q('应付账款'), '0', N_, f'"应付代发商 "&一件代发结算!$F{sr}', sup),
+        (Q('销售费用'), O_, '0', '"平台扣费（代发）"', cus),
+        (Q('应收账款'), '0', O_, '"平台扣费直接从货款里扣"', cus),
     ]
     for subj, dr, cr, smy, pty in lines:
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
              subj, pty, ref_f, dr, cr, '一件代发')
         r += 1
+# —— 受托代发（我发·别人卖）：代收货款 / 应收 → 我的收入；成本照减库存 ——
+#    款到我司：钱整笔进「其他应付款—代收货款」（由资金流水那一笔产生），
+#             这里只把属于我的那块（供货额＋服务费）从代收货款转成收入；
+#    款到委托方：我没收到钱，直接挂应收账款。
+for i in range(N_TRS):
+    sr = TRS0 + i
+    Qi = f'N(受托代发登记!$Q{sr})'; V_ = f'N(受托代发登记!$V{sr})'
+    mine = f'(受托代发登记!$G{sr}="款到我司")'
+    date_f = f'受托代发登记!$B{sr}'; co_f = f'受托代发登记!$D{sr}'
+    vno_f = f'"托-"&受托代发登记!$C{sr}'; ref_f = f'受托代发登记!$C{sr}'
+    party_f = f'受托代发登记!$E{sr}'
+    dead = f'受托代发登记!$B{sr}=""'
+    lines = [
+        (Q('其他应付款—代收货款'), f'IF({mine},{Qi},0)', '0', '"代收货款里属于我的部分转收入"'),
+        (Q('应收账款'), f'IF({mine},0,{Qi})', '0', f'"受托代发应收 "&受托代发登记!$E{sr}'),
+        (Q('主营业务收入'), '0', Qi, f'"受托代发收入（供货价＋服务费）"&受托代发登记!$I{sr}'),
+        (Q('主营业务成本'), V_, '0', f'"受托代发结转成本 "&受托代发登记!$I{sr}'),
+        (Q('库存商品'), '0', V_, '"受托代发发货，减自己的库存"'),
+    ]
+    for subj, dr, cr, smy in lines:
+        emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
+             subj, party_f, ref_f, dr, cr, '受托代发')
+        r += 1
+# —— 平台结算单：只有「结算单认收入」的那些行才做账（零售不录明细的入口）——
+for i in range(N_PS):
+    sr = PSS0 + i
+    Qn = f'N(平台结算单!$Q{sr})'; P_ = f'N(平台结算单!$P{sr})'
+    rev = f'ROUND(N(平台结算单!$J{sr})-N(平台结算单!$K{sr}),2)'
+    date_f = f'平台结算单!$H{sr}'; co_f = f'平台结算单!$D{sr}'
+    vno_f = f'"平-"&平台结算单!$C{sr}'; ref_f = f'平台结算单!$C{sr}'
+    party_f = (f'IFERROR(INDEX({SP_PT},MATCH(平台结算单!$E{sr},{SP_N},0)),平台结算单!$F{sr})')
+    dead = (f'OR(平台结算单!$B{sr}="",平台结算单!$U{sr}<>"结算单认收入")')
+    lines = [
+        (Q('应收账款'), Qn, '0', f'"平台结算应收净额 "&平台结算单!$E{sr}'),
+        (Q('销售费用'), P_, '0', '"平台扣费（佣金/推广/运费/其他）"'),
+        (Q('主营业务收入'), '0', rev, f'"零售汇总收入（含税，已扣退款）"&平台结算单!$E{sr}'),
+    ]
+    for subj, dr, cr, smy in lines:
+        emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
+             subj, party_f, ref_f, dr, cr, '平台结算单')
+        r += 1
+# —— 月末盘点：账面与实盘的差额一次性调成本 ——
+for i in range(N_MC):
+    sr = MTS0 + i
+    K_ = f'N(月末盘点与成本!$K{sr})'
+    date_f = (f'EOMONTH(DATE(INT(N(月末盘点与成本!$C{sr})/100),'
+              f'MOD(N(月末盘点与成本!$C{sr}),100),1),0)')
+    co_f = f'月末盘点与成本!$B{sr}'
+    vno_f = f'"盘-"&TEXT(N(月末盘点与成本!$C{sr}),"000000")&"-"&月末盘点与成本!$B{sr}'
+    ref_f = f'"盘点"&TEXT(N(月末盘点与成本!$C{sr}),"000000")'
+    dead = (f'OR(月末盘点与成本!$B{sr}="",月末盘点与成本!$J{sr}="")')
+    lines = [
+        (Q('主营业务成本'), f'MAX(0,{K_})', f'MAX(0,-{K_})', '"月末盘点差异调整"'),
+        (Q('库存商品'), f'MAX(0,-{K_})', f'MAX(0,{K_})', '"月末盘点差异调整"'),
+    ]
+    for subj, dr, cr, smy in lines:
+        emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
+             subj, '""', ref_f, dr, cr, '月末盘点')
+        r += 1
 # —— 资金流水：账户科目 ←→ 对方科目 ——
 for i in range(N_CASH):
     sr = K0 + i
-    H_ = f'N(资金流水!$H{sr})'; I_ = f'N(资金流水!$I{sr})'
+    I_ = f'N(资金流水!$I{sr})'; J_ = f'N(资金流水!$J{sr})'
     date_f = f'资金流水!$B{sr}'; co_f = f'资金流水!$C{sr}'
-    vno_f = f'"资-"&TEXT(N(资金流水!$A{sr}),"0000")'; ref_f = f'资金流水!$G{sr}'
-    party_f = f'资金流水!$F{sr}'
-    smy = f'IF(资金流水!$K{sr}="",资金流水!$E{sr},资金流水!$K{sr})'
+    vno_f = f'"资-"&TEXT(N(资金流水!$A{sr}),"0000")'; ref_f = f'资金流水!$H{sr}'
+    party_f = f'资金流水!$G{sr}'
+    smy = f'IF(资金流水!$L{sr}="",资金流水!$F{sr},资金流水!$L{sr})'
     # 内部转账要记两行（一出一入）才能让两个账户的余额都动起来，
     # 但凭证只由「转出」那一行生成（借 对方账户科目 / 贷 本账户科目），已经是一张完整凭证；
     # 「转入」行再生成一次就把这笔钱记了两遍，所以这里直接跳过。
-    dead = (f'OR(资金流水!$B{sr}="",AND(LEFT(资金流水!$E{sr},4)="内部转账",'
-            f'RIGHT(资金流水!$E{sr},2)="转入"))')
+    dead = (f'OR(资金流水!$B{sr}="",AND(LEFT(资金流水!$F{sr},4)="内部转账",'
+            f'RIGHT(资金流水!$F{sr},2)="转入"))')
     lines = [
-        (f'资金流水!$N{sr}', H_, I_),
-        (f'资金流水!$O{sr}', I_, H_),
+        (f'资金流水!$O{sr}', I_, J_),
+        (f'资金流水!$P{sr}', J_, I_),
     ]
     for subj, dr, cr in lines:
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, smy,
              subj, party_f, ref_f, dr, cr, '资金流水')
         r += 1
-# ↑ dead 里已经含了「转入行不出凭证」的判断
-# —— 费用及其他：费用科目 + 进项税 ← 应付账款 ——
+# —— 费用及其他：费用（含税全额）← 挂账科目 ——
 for i in range(N_EXP):
     sr = E0 + i
-    I_ = f'N(费用及其他!$I{sr})'; K_ = f'N(费用及其他!$K{sr})'; L_ = f'N(费用及其他!$L{sr})'
+    I_ = f'N(费用及其他!$I{sr})'
     date_f = f'费用及其他!$B{sr}'; co_f = f'费用及其他!$C{sr}'
     vno_f = f'"费-"&费用及其他!$G{sr}'; ref_f = f'费用及其他!$G{sr}'
     party_f = f'费用及其他!$F{sr}'
     smy = f'费用及其他!$E{sr}&" "&费用及其他!$H{sr}'
     dead = f'费用及其他!$B{sr}=""'
     lines = [
-        (f'费用及其他!$M{sr}', I_, '0', smy),
-        (Q('应交税费—应交增值税(进项税额)'), K_, '0', '"费用进项税额"'),
-        (f'费用及其他!$N{sr}', '0', L_, f'"挂账 "&费用及其他!$F{sr}'),
+        (f'费用及其他!$J{sr}', I_, '0', smy),
+        (f'费用及其他!$K{sr}', '0', I_, f'"挂账 "&费用及其他!$F{sr}'),
     ]
     for subj, dr, cr, sm in lines:
         emit(ws, r, f'OR({dead},ROUND(ABS({dr})+ABS({cr}),2)=0)', date_f, co_f, vno_f, sm,
@@ -1332,6 +1697,7 @@ page(ws, titles=f'{HDR}:{HDR}')
 AV = lambda c: f'自动凭证!${c}${A0}:${c}${A1}'
 MVv = lambda c: f'手工凭证!${c}${M0}:${c}${M1}'
 
+
 def vamt(side, subj, ym_lo, ym_hi, co='公司条件'):
     """凭证池（自动＋手工）里某科目、某公司、某月份区间的借方或贷方合计"""
     a_amt = AV('I') if side == 'D' else AV('J')
@@ -1339,8 +1705,8 @@ def vamt(side, subj, ym_lo, ym_hi, co='公司条件'):
     return (f'(SUMIFS({a_amt},{AV("F")},{subj},{AV("C")},{co},{AV("L")},">="&{ym_lo},{AV("L")},"<="&{ym_hi})'
             f'+SUMIFS({m_amt},{MVv("F")},{subj},{MVv("C")},{co},{MVv("N")},">="&{ym_lo},{MVv("N")},"<="&{ym_hi}))')
 
-print(f'  ✓ 自动凭证（{AV_ROWS} 行展开位）')
 
+print(f'  ✓ 自动凭证（{AV_ROWS} 行展开位）')
 # ════════════════════════════════════════════════════════════
 # ⑲ 科目余额表
 # ════════════════════════════════════════════════════════════
@@ -1550,9 +1916,10 @@ CO = lambda cell: f'COUNTIF({cell},公司条件)>0'
 X_PT0, X_PT1 = 4, 4 + N_PARTY - 1                      # 往来单位角色名单
 X_PR0, X_PR1 = 4, 4 + N_CO_MAX * N_PARTY - 1           # 公司×往来单位 配对池
 X_IT0, X_IT1 = 4, 4 + N_CO_MAX * N_ITEM - 1            # 公司×商品 配对池
-X_AR0, X_AR1 = 4, 4 + N_SAL + N_DRP - 1                # 应收核销池
-X_AP0, X_AP1 = 4, 4 + N_PUR + N_DRP + N_EXP - 1        # 应付核销池
-X_EX0, X_EX1 = 4, 4 + N_PUR + N_SAL + N_RBT + N_DRP + N_CASH + N_EXP - 1   # 异常池
+X_AR0, X_AR1 = 4, 4 + N_SAL + N_DRP + N_TRS + N_PS - 1           # 应收核销池
+X_AP0, X_AP1 = 4, 4 + N_PUR + N_DRP + N_EXP + N_TRS - 1          # 应付核销池
+X_EX0, X_EX1 = 4, 4 + N_PUR + N_SAL + N_RBT + N_DRP + N_TRS + N_PS \
+                 + N_CASH + N_EXP - 1                            # 异常池
 XR = lambda c, a, b: f'{AX}!${c}${a}:${c}${b}'
 
 # ════════════════════════════════════════════════════════════
@@ -1568,9 +1935,9 @@ widths(ws, {'A': 46, 'B': 8, 'C': 18, 'D': 18})
 
 def cf(kind, side, per):
     lo, hi = ('起始年月', '截止年月') if per == 'cur' else ('年初年月', '截止年月')
-    amt = CA('H') if side == 'in' else CA('I')
-    return (f'ROUND(SUMIFS({amt},{CA("P")},{kind},{CA("C")},公司条件,'
-            f'{CA("R")},">="&{lo},{CA("R")},"<="&{hi}),2)')
+    amt = CA("I") if side == "in" else CA("J")
+    return (f'ROUND(SUMIFS({amt},{CA("Q")},{kind},{CA("C")},公司条件,'
+            f'{CA("S")},">="&{lo},{CA("S")},"<="&{hi}),2)')
 
 CFL = []
 for k, (nm, key) in enumerate([('经营活动', '"经营活动"'), ('投资活动', '"投资活动"'), ('筹资活动', '"筹资活动"')]):
@@ -1612,8 +1979,8 @@ for c in 'CD':
 NETINC = r
 r += 1
 OPEN_CASH_BASE = f'ROUND(SUMIFS({OPA_V},期初余额!$I${OP4_0}:$I${OP4_1},公司条件),2)'
-PRIOR_FLOW = (f'ROUND(SUMIFS({CA("H")},{CA("C")},公司条件,{CA("R")},">="&年初年月,{CA("R")},"<="&(起始年月-1))'
-              f'-SUMIFS({CA("I")},{CA("C")},公司条件,{CA("R")},">="&年初年月,{CA("R")},"<="&(起始年月-1)),2)')
+PRIOR_FLOW = (f'ROUND(SUMIFS({CA("I")},{CA("C")},公司条件,{CA("S")},">="&年初年月,{CA("S")},"<="&(起始年月-1))'
+              f'-SUMIFS({CA("J")},{CA("C")},公司条件,{CA("S")},">="&年初年月,{CA("S")},"<="&(起始年月-1)),2)')
 put(ws, f'A{r}', '　　加：期初现金及现金等价物余额', font=F_TXT, align=CL)
 put(ws, f'B{r}', r - 3, font=F_NOTE, fmt='0')
 put(ws, f'C{r}', f'=ROUND({OPEN_CASH_BASE}+{PRIOR_FLOW},2)', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
@@ -1645,7 +2012,8 @@ page(ws, landscape=False)
 # ════════════════════════════════════════════════════════════
 ws = sheet('商品库存与成本')
 title(ws, '商 品 库 存 与 成 本（按公司分开算）', 'P', None)
-put(ws, 'A2', '=本期标题&"　｜　结存＝年初 ＋ 本年到查询月末的采购 － 销售；跟着《查询设置》的公司走；一件代发不进库存，不在这张表里"',
+put(ws, 'A2', '=本期标题&"　｜　结存＝年初 ＋ 采购 － 销售（含受托代发发出去的货）；一件代发的货不是我们的，不进这张表；'
+              '零售走《平台结算单》汇总认收入的那部分没有商品明细，差额由《月末盘点与成本》在下面的「调整」行统一轧平"',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells('A2:P2')
 ICC = ['序号', '公司', '商品编码', '商品名称', '单位',
@@ -1675,16 +2043,20 @@ for i in range(IC0, IC1 + 1):
     put(ws, f'H{i}', f'=IF(OR($B{i}="",N($F{i})=0),"",ROUND($G{i}/$F{i},4))',
         font=F_AUTO, fill=FILL_AUTO, fmt=PRICE)
     put(ws, f'I{i}', f'=IF($B{i}="","",ROUND(SUMIFS({PU("J")},{PU("D")},$B{i},{PU("G")},$C{i},'
-                     f'{PU("AD")},">="&年初年月,{PU("AD")},"<="&截止年月),4))',
+                     f'{PU("AA")},">="&年初年月,{PU("AA")},"<="&截止年月),4))',
         font=F_AUTO, fill=FILL_AUTO, fmt=NUM)
-    put(ws, f'J{i}', f'=IF($B{i}="","",ROUND(SUMIFS({PU("S")},{PU("D")},$B{i},{PU("G")},$C{i},'
-                     f'{PU("AD")},">="&年初年月,{PU("AD")},"<="&截止年月),2))',
+    put(ws, f'J{i}', f'=IF($B{i}="","",ROUND(SUMIFS({PU("P")},{PU("D")},$B{i},{PU("G")},$C{i},'
+                     f'{PU("AA")},">="&年初年月,{PU("AA")},"<="&截止年月),2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'K{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("K")},{SA("D")},$B{i},{SA("H")},$C{i},'
-                     f'{SA("AF")},">="&年初年月,{SA("AF")},"<="&截止年月),4))',
+                     f'{SA("AC")},">="&年初年月,{SA("AC")},"<="&截止年月)'
+                     f'+SUMIFS({TR("J")},{TR("D")},$B{i},{TR("H")},$C{i},'
+                     f'{TR("AD")},">="&年初年月,{TR("AD")},"<="&截止年月),4))',
         font=F_AUTO, fill=FILL_AUTO, fmt=NUM)
-    put(ws, f'L{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("T")},{SA("D")},$B{i},{SA("H")},$C{i},'
-                     f'{SA("AF")},">="&年初年月,{SA("AF")},"<="&截止年月),2))',
+    put(ws, f'L{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("Q")},{SA("D")},$B{i},{SA("H")},$C{i},'
+                     f'{SA("AC")},">="&年初年月,{SA("AC")},"<="&截止年月)'
+                     f'+SUMIFS({TR("V")},{TR("D")},$B{i},{TR("H")},$C{i},'
+                     f'{TR("AD")},">="&年初年月,{TR("AD")},"<="&截止年月),2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'M{i}', f'=IF($B{i}="","",ROUND(N($F{i})+N($I{i})-N($K{i}),4))', font=F_TOT, fill=FILL_AUTO, fmt=NUM)
     put(ws, f'N{i}', f'=IF($B{i}="","",ROUND(N($G{i})+N($J{i})-N($L{i}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
@@ -1705,13 +2077,18 @@ put(ws, f'P{ICT}', '按商品逐个算出来的小计', font=F_NOTE, fill=FILL_T
 ADJ_R = ICT + 1
 MANU_INV = (f'ROUND(SUMIFS({MVv("I")},{MVv("F")},"库存商品",{MVv("C")},公司条件,'
             f'{MVv("N")},"<="&截止年月)-SUMIFS({MVv("J")},{MVv("F")},"库存商品",{MVv("C")},公司条件,'
-            f'{MVv("N")},"<="&截止年月),2)')
+            f'{MVv("N")},"<="&截止年月)'
+            f'+SUMIFS({AV("I")},{AV("F")},"库存商品",{AV("C")},公司条件,{AV("K")},"月末盘点",'
+            f'{AV("L")},"<="&截止年月)'
+            f'-SUMIFS({AV("J")},{AV("F")},"库存商品",{AV("C")},公司条件,{AV("K")},"月末盘点",'
+            f'{AV("L")},"<="&截止年月),2)')
 put(ws, f'A{ADJ_R}', '调  整', font=F_TOT, fill=FILL_WARN)
-put(ws, f'B{ADJ_R}', '手工凭证对「库存商品」的调整', font=F_TOT, fill=FILL_WARN, align=CL)
+put(ws, f'B{ADJ_R}', '手工凭证的存货调整 ＋ 月末盘点差异', font=F_TOT, fill=FILL_WARN, align=CL)
 for c in 'CDEFGHIJKLMO':
     put(ws, f'{c}{ADJ_R}', None, font=F_TOT, fill=FILL_WARN)
 put(ws, f'N{ADJ_R}', f'={MANU_INV}', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
-put(ws, f'P{ADJ_R}', '报废、盘盈盘亏这些不按商品算，只在总额上调', font=F_NOTE, fill=FILL_WARN, align=CL)
+put(ws, f'P{ADJ_R}', '报废、盘盈盘亏、零售汇总认收入那部分的成本，都不按商品算，只在总额上调',
+    font=F_NOTE, fill=FILL_WARN, align=CL)
 INV_TOT = ADJ_R + 1
 put(ws, f'A{INV_TOT}', '合  计', font=F_TOT, fill=FILL_TOT)
 put(ws, f'B{INV_TOT}', '（与资产负债表「存货」对）', font=F_TOT, fill=FILL_TOT, align=CL)
@@ -1740,25 +2117,27 @@ def vpt(side, subj, party, co, lo='年初年月', hi='截止年月'):
             f'{MVv("N")},">="&{lo},{MVv("N")},"<="&{hi}))')
 
 ws = sheet('综合往来对账')
-title(ws, '综 合 往 来 对 账（按「公司 + 往来单位」汇总）', 'S', None)
+title(ws, '综 合 往 来 对 账（按「公司 + 往来单位」汇总）', 'T', None)
 put(ws, 'A2', '=本期标题&"　｜　★ 同一家单位在不同公司的账是分开的，甲公司欠它的钱不会自动拿乙公司的应收去冲；'
-              '应付货款、应收销售款、应收返利、借款也各算各的，想抵销必须在《手工凭证》做正式抵销凭证"',
+              '应付货款、应收销售款、应收返利、借款、代收货款也各算各的，想抵销必须在《手工凭证》做正式抵销凭证"',
     font=F_NOTE, align=CL, border=None)
-ws.merge_cells('A2:S2')
+ws.merge_cells('A2:T2')
 PTC = ['序号', '公司', '往来单位', '身份',
        '应付发生', '已付/已结', '应付余额',
        '应收发生', '已收/已结', '应收余额',
        '返利应收发生', '返利已收', '返利余额',
-       '借款余额', '经营净往来', '净资金敞口', '欠款方向', '跨公司提示', '备注']
+       '借款余额', '代收货款余额(欠委托方)', '经营净往来', '净资金敞口',
+       '欠款方向', '跨公司提示', '备注']
 headers(ws, HDR, PTC)
 widths(ws, {'A': 6, 'B': 13, 'C': 24, 'D': 22,
             'E': 14, 'F': 14, 'G': 14, 'H': 14, 'I': 14, 'J': 14,
-            'K': 14, 'L': 13, 'M': 13, 'N': 14, 'O': 15, 'P': 15,
-            'Q': 12, 'R': 26, 'S': 20})
+            'K': 14, 'L': 13, 'M': 13, 'N': 14, 'O': 20, 'P': 15, 'Q': 15,
+            'R': 12, 'S': 26, 'T': 20})
 PTD0, PTD1 = 4, 203
 AP_S, AR_S = Q('应付账款'), Q('应收账款')
 RB_S = Q('其他应收款—应收返利')
 LN1, LN2 = Q('短期借款'), Q('其他应付款—股东借款')
+ADV_S = Q('其他应付款—代收货款')
 for i in range(PTD0, PTD1 + 1):
     k = i - PTD0 + 1
     put(ws, f'A{i}', f'=IF($B{i}="","",{k})', font=F_AUTO, fill=FILL_AUTO, fmt='0')
@@ -1794,19 +2173,22 @@ for i in range(PTD0, PTD1 + 1):
     ln = (f'{vpt("C", LN1, f"$C{i}", f"$B{i}")}-{vpt("D", LN1, f"$C{i}", f"$B{i}")}'
           f'+{vpt("C", LN2, f"$C{i}", f"$B{i}")}-{vpt("D", LN2, f"$C{i}", f"$B{i}")}')
     put(ws, f'N{i}', f'=IF($B{i}="","",ROUND({op_ln}+{ln},2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'O{i}', f'=IF($B{i}="","",ROUND(N($J{i})-N($G{i}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'P{i}', f'=IF($B{i}="","",ROUND(N($J{i})+N($M{i})-N($G{i})-N($N{i}),2))',
+    put(ws, f'O{i}', f'=IF($B{i}="","",ROUND({vpt("C", ADV_S, f"$C{i}", f"$B{i}")}'
+                     f'-{vpt("D", ADV_S, f"$C{i}", f"$B{i}")},2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'P{i}', f'=IF($B{i}="","",ROUND(N($J{i})-N($G{i})-N($O{i}),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'Q{i}', f'=IF($B{i}="","",IF(ROUND(N($P{i}),2)=0,"两清",IF(N($P{i})>0,"对方欠我","我欠对方")))',
+    put(ws, f'Q{i}', f'=IF($B{i}="","",ROUND(N($J{i})+N($M{i})-N($G{i})-N($N{i})-N($O{i}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'R{i}', f'=IF($B{i}="","",IF(ROUND(N($Q{i}),2)=0,"两清",IF(N($Q{i})>0,"对方欠我","我欠对方")))',
         font=F_AUTO, fill=FILL_AUTO)
-    put(ws, f'T{i}', f'=IF($B{i}="",0,IF(ROUND(ABS(N($G{i}))+ABS(N($J{i}))+ABS(N($M{i}))'
-                     f'+ABS(N($N{i})),2)>0,1,0))', font=F_AUTO, fill=FILL_AUTO, fmt='0', border=None)
-    put(ws, f'U{i}', f'=IF($T{i}=0,0,IF(SUMPRODUCT(($C${PTD0}:$C${PTD1}=$C{i})*'
-                     f'($T${PTD0}:$T${PTD1}))>1,1,0))', font=F_AUTO, fill=FILL_AUTO, fmt='0', border=None)
-    put(ws, f'R{i}', f'=IF($B{i}="","",IF($U{i}=1,"⚠ 这家在 "&SUMPRODUCT(($C${PTD0}:$C${PTD1}=$C{i})'
-                     f'*($T${PTD0}:$T${PTD1}))&" 家公司都有余额，不能互相抵销",""))',
+    put(ws, f'U{i}', f'=IF($B{i}="",0,IF(ROUND(ABS(N($G{i}))+ABS(N($J{i}))+ABS(N($M{i}))'
+                     f'+ABS(N($N{i}))+ABS(N($O{i})),2)>0,1,0))', font=F_AUTO, fill=FILL_AUTO, fmt='0', border=None)
+    put(ws, f'V{i}', f'=IF($U{i}=0,0,IF(SUMPRODUCT(($C${PTD0}:$C${PTD1}=$C{i})*'
+                     f'($U${PTD0}:$U${PTD1}))>1,1,0))', font=F_AUTO, fill=FILL_AUTO, fmt='0', border=None)
+    put(ws, f'S{i}', f'=IF($B{i}="","",IF($V{i}=1,"⚠ 这家在 "&SUMPRODUCT(($C${PTD0}:$C${PTD1}=$C{i})'
+                     f'*($U${PTD0}:$U${PTD1}))&" 家公司都有余额，不能互相抵销",""))',
         font=F_WARN, fill=FILL_AUTO, align=CL)
-    put(ws, f'S{i}', None, font=F_IN, fill=FILL_IN, align=CL)
+    put(ws, f'T{i}', None, font=F_IN, fill=FILL_IN, align=CL)
 # 工资、税费这些没有往来对象的，也要有个去处，否则合计跟资产负债表对不上
 UNS = PTD1 + 1
 put(ws, f'A{UNS}', '—', font=F_TOT, fill=FILL_WARN)
@@ -1830,24 +2212,26 @@ TOTALS = {
          f'+SUMIFS({OPEN_C},{OPEN_SUB},"其他应付款—股东借款",{OPEN_CO},公司条件)'
          f'+{vamt("C", LN1, "年初年月", "截止年月")}-{vamt("D", LN1, "年初年月", "截止年月")}'
          f'+{vamt("C", LN2, "年初年月", "截止年月")}-{vamt("D", LN2, "年初年月", "截止年月")}',
+    'O': f'SUMIFS({OPEN_C},{OPEN_SUB},"其他应付款—代收货款",{OPEN_CO},公司条件)'
+         f'+{vamt("C", ADV_S, "年初年月", "截止年月")}-{vamt("D", ADV_S, "年初年月", "截止年月")}',
 }
 for c, f in TOTALS.items():
     put(ws, f'{c}{UNS}', f'=ROUND(({f})-SUM({c}{PTD0}:{c}{PTD1}),2)',
         font=F_TOT, fill=FILL_WARN, fmt=MONEY)
-put(ws, f'O{UNS}', f'=ROUND(N($J{UNS})-N($G{UNS}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
-put(ws, f'P{UNS}', f'=ROUND(N($J{UNS})+N($M{UNS})-N($G{UNS})-N($N{UNS}),2)',
+put(ws, f'P{UNS}', f'=ROUND(N($J{UNS})-N($G{UNS})-N($O{UNS}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
+put(ws, f'Q{UNS}', f'=ROUND(N($J{UNS})+N($M{UNS})-N($G{UNS})-N($N{UNS})-N($O{UNS}),2)',
     font=F_TOT, fill=FILL_WARN, fmt=MONEY)
-for c in ['Q', 'R', 'S']:
+for c in ['R', 'S', 'T']:
     put(ws, f'{c}{UNS}', None, font=F_TOT, fill=FILL_WARN)
 PTT = PTD1 + 2
 put(ws, f'A{PTT}', '合  计', font=F_TOT, fill=FILL_TOT)
-for c in ['B', 'C', 'D', 'Q', 'R', 'S']:
+for c in ['B', 'C', 'D', 'R', 'S', 'T']:
     put(ws, f'{c}{PTT}', None, font=F_TOT, fill=FILL_TOT)
-for c in list('EFGHIJKLMNOP'):
+for c in list('EFGHIJKLMNOPQ'):
     put(ws, f'{c}{PTT}', f'=ROUND(SUM({c}{PTD0}:{c}{UNS}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-ws.column_dimensions['T'].hidden = True
 ws.column_dimensions['U'].hidden = True
-ws.auto_filter.ref = f'A{HDR}:S{PTD1}'
+ws.column_dimensions['V'].hidden = True
+ws.auto_filter.ref = f'A{HDR}:T{PTD1}'
 ws.freeze_panes = 'D4'
 page(ws, titles=f'{HDR}:{HDR}')
 
@@ -1901,9 +2285,11 @@ def wo_block(ws, hdr_row, r0, r1, pool_cols, pool_a, pool_b, label, kind):
 widths(ws, {'A': 6, 'B': 14, 'C': 16, 'D': 11, 'E': 13, 'F': 24, 'G': 16,
             'H': 15, 'I': 15, 'J': 12, 'K': 11, 'L': 14})
 AR_T = wo_block(ws, 4, 5, 204, ('X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE'),
-                (X_AR0, X_AR1), 'AG', '一、应收未结（销售 / 一件代发）—— 客户和平台还欠我们的', 'AR')
+                (X_AR0, X_AR1), 'AG',
+                '一、应收未结（销售 / 一件代发 / 受托代发 / 平台结算）—— 客户、平台、委托店铺还欠我们的', 'AR')
 AP_T = wo_block(ws, AR_T + 3, AR_T + 4, AR_T + 203, ('AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP'),
-                (X_AP0, X_AP1), 'AR', '二、应付未结（采购 / 一件代发 / 费用）—— 我们还欠供应商的', 'AP')
+                (X_AP0, X_AP1), 'AR',
+                '二、应付未结（采购 / 一件代发 / 费用 / 受托代发代收货款）—— 我们还欠供应商和委托店铺的', 'AP')
 put(ws, f'A{AP_T+2}',
     '注：① 一张单出现在这里，就说明它还没结清。结清的判断＝「资金流水里按单号收/付的钱」＋'
     '「手工凭证里按单号做的正式抵销」≥ 单据金额。\n'
@@ -1919,8 +2305,8 @@ page(ws)
 # ════════════════════════════════════════════════════════════
 ws = sheet('店铺利润分析')
 title(ws, '店 铺 利 润 分 析', 'Q', None)
-put(ws, 'A2', '=本期标题&"　｜　自营（走库存）和一件代发分开列，最后合成店铺净利；'
-              '公司层面的共同费用（没填店铺的）不摊到店铺上，单独在最后一行显示"',
+put(ws, 'A2', '=本期标题&"　｜　自营（走库存，含《平台结算单》里「结算单认收入」的零售汇总）和一件代发分开列，'
+              '最后合成店铺净利；公司共同费用（没填店铺的）和受托代发（别人的店卖）不摊到店铺上，单独列在下面"',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells('A2:Q2')
 SPC = ['序号', '店铺', '所属公司', '平台',
@@ -1940,16 +2326,22 @@ for i in range(SPD0, SPD1 + 1):
     put(ws, f'B{i}', f'=IF(INDEX({SP_N},{k})="","",INDEX({SP_N},{k}))', font=F_TOT, fill=FILL_AUTO, align=CL)
     put(ws, f'C{i}', f'=IF($B{i}="","",INDEX({SP_CO},{k}))', font=F_AUTO, fill=FILL_AUTO)
     put(ws, f'D{i}', f'=IF($B{i}="","",INDEX({SP_PF},{k}))', font=F_AUTO, fill=FILL_AUTO)
-    base_s = f'{SA("E")},$B{i},{SA("D")},公司条件,{YMR(SA("AF"))}'
-    base_d = f'{DP("E")},$B{i},{DP("D")},公司条件,{YMR(DP("AC"))}'
-    base_e = f'{EP("D")},$B{i},{EP("C")},公司条件,{YMR(EP("S"))}'
-    put(ws, f'E{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("O")},{base_s}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'F{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("T")},{base_s}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'G{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("Q")},{base_s}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    base_s = f'{SA("E")},$B{i},{SA("D")},公司条件,{YMR(SA("AC"))}'
+    base_d = f'{DP("E")},$B{i},{DP("D")},公司条件,{YMR(DP("W"))}'
+    base_e = f'{EP("D")},$B{i},{EP("C")},公司条件,{YMR(EP("P"))}'
+    # 走《平台结算单》「结算单认收入」的零售汇总，也要算进这个店的自营收入和扣费
+    base_p = (f'{PS("E")},$B{i},{PS("D")},公司条件,{YMR(PS("AA"))},'
+              f'{PS("U")},"结算单认收入"')
+    put(ws, f'E{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("M")},{base_s})'
+                     f'+SUMIFS({PS("J")},{base_p})-SUMIFS({PS("K")},{base_p}),2))',
+        font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'F{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("Q")},{base_s}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'G{i}', f'=IF($B{i}="","",ROUND(SUMIFS({SA("O")},{base_s})'
+                     f'+SUMIFS({PS("P")},{base_p}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'H{i}', f'=IF($B{i}="","",ROUND(N($E{i})-N($F{i})-N($G{i}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'I{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("N")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'J{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("S")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
-    put(ws, f'K{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("U")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'I{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("L")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'J{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("N")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'K{i}', f'=IF($B{i}="","",ROUND(SUMIFS({DP("O")},{base_d}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'L{i}', f'=IF($B{i}="","",ROUND(N($I{i})-N($J{i})-N($K{i}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'M{i}', f'=IF($B{i}="","",ROUND(SUMIFS({EP("I")},{base_e}),2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'N{i}', f'=IF($B{i}="","",ROUND(N($H{i})+N($L{i})-N($M{i}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
@@ -1957,7 +2349,8 @@ for i in range(SPD0, SPD1 + 1):
                      f'ROUND((N($H{i})+N($L{i}))/(N($E{i})+N($I{i})),4))', font=F_AUTO, fill=FILL_AUTO, fmt=PCT)
     put(ws, f'P{i}', f'=IF(OR($B{i}="",ROUND(N($E{i})+N($I{i}),2)=0),"",'
                      f'ROUND(N($N{i})/(N($E{i})+N($I{i})),4))', font=F_AUTO, fill=FILL_AUTO, fmt=PCT)
-    put(ws, f'Q{i}', f'=IF($B{i}="","",COUNTIFS({base_s})+COUNTIFS({base_d}))',
+    put(ws, f'Q{i}', f'=IF($B{i}="","",SUMIFS({SA("N")},{base_s})+COUNTIFS({base_d})'
+                     f'+SUMIFS({PS("I")},{base_p}))',
         font=F_AUTO, fill=FILL_AUTO, fmt='0')
 SPT = SPD1 + 1
 put(ws, f'A{SPT}', '小  计', font=F_TOT, fill=FILL_TOT)
@@ -1971,15 +2364,27 @@ put(ws, f'A{CM}', '公司共同费用', font=F_TOT, fill=FILL_WARN)
 put(ws, f'B{CM}', '（没填店铺的那些费用，不摊到店铺）', font=F_NOTE, fill=FILL_WARN, align=CL)
 for c in 'CDEFGHIJKLOPQ':
     put(ws, f'{c}{CM}', None, font=F_TOT, fill=FILL_WARN)
-put(ws, f'M{CM}', f'=ROUND(SUMIFS({EP("I")},{EP("D")},"",{EP("C")},公司条件,{YMR(EP("S"))}),2)',
+put(ws, f'M{CM}', f'=ROUND(SUMIFS({EP("I")},{EP("D")},"",{EP("C")},公司条件,{YMR(EP("P"))}),2)',
     font=F_TOT, fill=FILL_WARN, fmt=MONEY)
 put(ws, f'N{CM}', f'=ROUND(-N($M{CM}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
-GT = CM + 1
+TRR = CM + 1
+base_t = f'{TR("D")},公司条件,{YMR(TR("AD"))}'
+put(ws, f'A{TRR}', '受托代发', font=F_TOT, fill=FILL_WARN)
+put(ws, f'B{TRR}', '（我发货·别人的店卖，不归属自己的店铺）', font=F_NOTE, fill=FILL_WARN, align=CL)
+for c in 'CDFGHJKMOP':
+    put(ws, f'{c}{TRR}', None, font=F_TOT, fill=FILL_WARN)
+put(ws, f'E{TRR}', f'=ROUND(SUMIFS({TR("Q")},{base_t}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
+put(ws, f'F{TRR}', f'=ROUND(SUMIFS({TR("V")},{base_t}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
+put(ws, f'I{TRR}', None, font=F_TOT, fill=FILL_WARN)
+put(ws, f'L{TRR}', None, font=F_TOT, fill=FILL_WARN)
+put(ws, f'N{TRR}', f'=ROUND(N($E{TRR})-N($F{TRR}),2)', font=F_TOT, fill=FILL_WARN, fmt=MONEY)
+put(ws, f'Q{TRR}', f'=COUNTIFS({base_t})', font=F_TOT, fill=FILL_WARN, fmt='0')
+GT = TRR + 1
 put(ws, f'A{GT}', '合  计', font=F_TOT, fill=FILL_TOT)
 for c in 'BCDOPQ':
     put(ws, f'{c}{GT}', None, font=F_TOT, fill=FILL_TOT)
 for c in list('EFGHIJKLMN'):
-    put(ws, f'{c}{GT}', f'=ROUND({c}{SPT}+N({c}{CM}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+    put(ws, f'{c}{GT}', f'=ROUND({c}{SPT}+N({c}{CM})+N({c}{TRR}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
 DIFF_R = GT + 1
 put(ws, f'A{DIFF_R}', '与利润表对账', font=F_TOT, fill=FILL_SEC, align=CR)
 put(ws, f'B{DIFF_R}', '利润表「本期净利润」', font=F_TXT, fill=FILL_SEC, align=CL)
@@ -2017,36 +2422,37 @@ ws.merge_cells('A2:H2')
 headers(ws, HDR, ['编号', '预警规则', '触发笔数', '涉及金额', '严重度', '怎么处理', '', ''])
 widths(ws, {'A': 7, 'B': 34, 'C': 11, 'D': 16, 'E': 10, 'F': 60, 'G': 14, 'H': 14})
 NOTBLANK = '"<>"'
-LINKED_R = ('(LEFT(' + CA("E") + ',4)="付-采购")+(LEFT(' + CA("E") + ',4)="付-代发")'
-            '+(LEFT(' + CA("E") + ',4)="付-费用")+(LEFT(' + CA("E") + ',4)="收-销售")'
-            '+(LEFT(' + CA("E") + ',4)="收-平台")+(LEFT(' + CA("E") + ',4)="收-返利")'
-            '+(LEFT(' + CA("E") + ',4)="收-退货")')
+LINKED_R = ('(LEFT(' + CA("F") + ',4)="付-采购")+(LEFT(' + CA("F") + ',4)="付-代发")'
+            '+(LEFT(' + CA("F") + ',4)="付-费用")+(LEFT(' + CA("F") + ',4)="收-销售")'
+            '+(LEFT(' + CA("F") + ',4)="收-平台")+(LEFT(' + CA("F") + ',4)="收-返利")'
+            '+(LEFT(' + CA("F") + ',4)="收-退货")'
+            '+(LEFT(' + CA("F") + ',4)="收-代收")+(LEFT(' + CA("F") + ',4)="收-代发")')
 RULES = [
     ('W01', '采购已过信用期还没付清',
-     f'COUNTIFS({PU("Z")},">0")', f'SUMIFS({PU("V")},{PU("Z")},">0")', '高',
+     f'COUNTIFS({PU("W")},">0")', f'SUMIFS({PU("S")},{PU("W")},">0")', '高',
      '去《收付款核销中心》下半张看逐笔；该付就付，付了记《资金流水》并填采购单号'),
     ('W02', '采购缺票（没收到进项发票）',
-     f'COUNTIFS({PU("AB")},"未开票")+COUNTIFS({PU("AB")},"部分开票")',
-     f'SUMIFS({PU("L")},{PU("AB")},"未开票")+SUMIFS({PU("L")},{PU("AB")},"部分开票")', '高',
+     f'COUNTIFS({PU("Y")},"未开票")+COUNTIFS({PU("Y")},"部分开票")',
+     f'SUMIFS({PU("L")},{PU("Y")},"未开票")+SUMIFS({PU("L")},{PU("Y")},"部分开票")', '高',
      '催供应商开票；收到票在《发票台账》登记并填上采购单号，这条就消了'),
     ('W03', '采购付超了（已付大于应付）',
-     f'COUNTIFS({PU("V")},"<-0.01",{PU("L")},">0")',
-     f'-SUMIFS({PU("V")},{PU("V")},"<-0.01",{PU("L")},">0")', '高',
+     f'COUNTIFS({PU("S")},"<-0.01",{PU("L")},">0")',
+     f'-SUMIFS({PU("S")},{PU("S")},"<-0.01",{PU("L")},">0")', '高',
      '多半是《资金流水》关联单号填错，或者一笔钱记了两遍'),
     ('W04', '销售已过账期还没回款',
-     f'COUNTIFS({SA("AB")},">0")', f'SUMIFS({SA("X")},{SA("AB")},">0")', '高',
+     f'COUNTIFS({SA("Y")},">0")', f'SUMIFS({SA("U")},{SA("Y")},">0")', '高',
      '平台结算一般 7 天，超了要查是不是被冻结或漏记结算单'),
     ('W05', '销售缺票（该开没开）',
-     f'COUNTIFS({SA("AD")},"未开票")+COUNTIFS({SA("AD")},"部分开票")',
-     f'SUMIFS({SA("M")},{SA("AD")},"未开票")+SUMIFS({SA("M")},{SA("AD")},"部分开票")', '中',
+     f'COUNTIFS({SA("AA")},"未开票")+COUNTIFS({SA("AA")},"部分开票")',
+     f'SUMIFS({SA("M")},{SA("AA")},"未开票")+SUMIFS({SA("M")},{SA("AA")},"部分开票")', '中',
      'C 端零售不要票是正常的；批发客户要票的记得开并登记'),
     ('W06', '销售收超了（已收大于应收）',
-     f'COUNTIFS({SA("X")},"<-0.01",{SA("M")},">0")',
-     f'-SUMIFS({SA("X")},{SA("X")},"<-0.01",{SA("M")},">0")', '高',
+     f'COUNTIFS({SA("U")},"<-0.01",{SA("M")},">0")',
+     f'-SUMIFS({SA("U")},{SA("U")},"<-0.01",{SA("M")},">0")', '高',
      '查关联单号；客户先打款后发货请用「收-预收货款」（挂预收账款），不要用「收-其他」'),
     ('W07', '销售取不到成本（这个商品之前没进过货）',
-     f'SUMPRODUCT(({SA("B")}<>"")*({SA("K")}<>0)*({SA("R")}=""))',
-     f'SUMPRODUCT(({SA("B")}<>"")*({SA("K")}<>0)*({SA("R")}="")*N({SA("O")}))', '高',
+     f'SUMPRODUCT(({SA("B")}<>"")*({SA("K")}<>0)*({SA("P")}=""))',
+     f'SUMPRODUCT(({SA("B")}<>"")*({SA("K")}<>0)*({SA("P")}="")*N({SA("M")}))', '高',
      '要么补登采购，要么在《期初余额》填这个商品的期初库存，要么直接填「手工单位成本」'),
     ('W08', '返利确认了但还没到账',
      f'COUNTIFS({RB("O")},"未收")+COUNTIFS({RB("O")},"部分收")',
@@ -2061,22 +2467,24 @@ RULES = [
      f'SUMIFS({RB("I")},{RB("M")},"未开票")', '中',
      '返利要不要票看当地税务口径；要票就催，红字票收到后做一张进项转出的手工凭证'),
     ('W11', '一件代发还没结清（欠客户回款 或 欠代发商货款）',
-     f'COUNTIFS({DP("AA")},"<>已结清")-COUNTIFS({DP("AA")},"")',
-     f'SUMIFS({DP("X")},{DP("AA")},"<>已结清")+SUMIFS({DP("Z")},{DP("AA")},"<>已结清")', '中',
+     f'COUNTIFS({DP("U")},"<>已结清")-COUNTIFS({DP("U")},"")',
+     f'SUMIFS({DP("R")},{DP("U")},"<>已结清")+SUMIFS({DP("T")},{DP("U")},"<>已结清")', '中',
      '回款填「收-销售货款」＋结算单号；付代发商填「付-代发货款」＋同一个结算单号'),
     ('W12', '资金流水填了关联单号，但找不到对应的业务单',
-     f'SUMPRODUCT(({CA("G")}<>"")*({LINKED_R})*(COUNTIF({PU("C")},{CA("G")})+COUNTIF({SA("C")},{CA("G")})'
-     f'+COUNTIF({RB("B")},{CA("G")})+COUNTIF({DP("C")},{CA("G")})+COUNTIF({EP("G")},{CA("G")})=0))',
-     f'SUMPRODUCT(({CA("G")}<>"")*({LINKED_R})*(COUNTIF({PU("C")},{CA("G")})+COUNTIF({SA("C")},{CA("G")})'
-     f'+COUNTIF({RB("B")},{CA("G")})+COUNTIF({DP("C")},{CA("G")})+COUNTIF({EP("G")},{CA("G")})=0)'
-     f'*(N({CA("H")})+N({CA("I")})))', '高',
+     f'SUMPRODUCT(({CA("H")}<>"")*({LINKED_R})*(COUNTIF({PU("C")},{CA("H")})+COUNTIF({SA("C")},{CA("H")})'
+     f'+COUNTIF({RB("B")},{CA("H")})+COUNTIF({DP("C")},{CA("H")})+COUNTIF({EP("G")},{CA("H")})'
+     f'+COUNTIF({TR("C")},{CA("H")})+COUNTIF({PS("C")},{CA("H")})=0))',
+     f'SUMPRODUCT(({CA("H")}<>"")*({LINKED_R})*(COUNTIF({PU("C")},{CA("H")})+COUNTIF({SA("C")},{CA("H")})'
+     f'+COUNTIF({RB("B")},{CA("H")})+COUNTIF({DP("C")},{CA("H")})+COUNTIF({EP("G")},{CA("H")})'
+     f'+COUNTIF({TR("C")},{CA("H")})+COUNTIF({PS("C")},{CA("H")})=0)'
+     f'*(N({CA("I")})+N({CA("J")})))', '高',
      '单号打错了，或者业务单还没登记 —— 这笔钱就核销不到任何一张单上。'
      '借款、股东投入、税费、保证金这些本来就没有业务单，不在这条规则里'),
     ('W13', '资金流水的对方科目取不到',
-     f'COUNTIF({CA("O")},"★*")', f'SUMIFS({CA("H")},{CA("O")},"★*")+SUMIFS({CA("I")},{CA("O")},"★*")', '高',
+     f'COUNTIF({CA("P")},"★*")', f'SUMIFS({CA("I")},{CA("P")},"★*")+SUMIFS({CA("J")},{CA("P")},"★*")', '高',
      '业务类型不在《资金规则》里，或者内部转账没填「对方账户」'),
     ('W14', '费用的对应科目取不到',
-     f'COUNTIF({EP("M")},"★*")', f'SUMIFS({EP("L")},{EP("M")},"★*")', '高',
+     f'COUNTIF({EP("J")},"★*")', f'SUMIFS({EP("I")},{EP("J")},"★*")', '高',
      '《基础资料》里这个费用项目右边没配「费用对应科目」'),
     ('W15', '手工凭证有借贷不平的',
      f'SUMPRODUCT(({MV("D")}<>"")*(LEFT({MV("L")},1)="✘")/MAX(1,COUNTIF({MV("D")},{MV("D")}&"")))',
@@ -2095,16 +2503,16 @@ RULES = [
      '★ 科目名称写错或《科目表》里缺这个科目 —— 这笔钱会掉在报表外面，而且借贷还是平的，很难发现。'
      '手工凭证尤其容易，一定要从下拉里选'),
     ('W21', '登记表里有金额被填成了文本（那一单会被整单剔出报表）',
-     f'SUMPRODUCT(({PU("B")}<>"")*(ISTEXT({PU("J")})+ISTEXT({PU("K")})+ISTEXT({PU("M")})))'
-     f'+SUMPRODUCT(({SA("B")}<>"")*(ISTEXT({SA("K")})+ISTEXT({SA("L")})+ISTEXT({SA("N")})+ISTEXT({SA("Q")})))'
-     f'+SUMPRODUCT(({CA("B")}<>"")*(ISTEXT({CA("H")})+ISTEXT({CA("I")})))'
-     f'+SUMPRODUCT(({EP("B")}<>"")*(ISTEXT({EP("I")})+ISTEXT({EP("J")})))'
+     f'SUMPRODUCT(({PU("B")}<>"")*(ISTEXT({PU("J")})+ISTEXT({PU("K")})))'
+     f'+SUMPRODUCT(({SA("B")}<>"")*(ISTEXT({SA("K")})+ISTEXT({SA("L")})+ISTEXT({SA("N")})+ISTEXT({SA("O")})))'
+     f'+SUMPRODUCT(({CA("B")}<>"")*(ISTEXT({CA("I")})+ISTEXT({CA("J")})))'
+     f'+SUMPRODUCT(({EP("B")}<>"")*ISTEXT({EP("I")}))'
      f'+SUMPRODUCT(({MV("B")}<>"")*(ISTEXT({MV("I")})+ISTEXT({MV("J")})))', '0', '高',
      '★ 从别的表复制粘贴最容易出这个。文本金额参与不了计算，那一单凭证直接不生成，'
      '报表照样是平的 —— 选中那一列 →【数据】→【分列】→ 直接完成，就能转回数字'),
     ('W22', '内部转账选了别家公司的账户',
-     f'SUMPRODUCT((LEFT({CA("E")},4)="内部转账")*({CA("L")}<>"")'
-     f'*(COUNTIFS({ACC_N},{CA("L")},{ACC_CO},{CA("C")})=0))', '0', '高',
+     f'SUMPRODUCT((LEFT({CA("F")},4)="内部转账")*({CA("M")}<>"")'
+     f'*(COUNTIFS({ACC_N},{CA("M")},{ACC_CO},{CA("C")})=0))', '0', '高',
      '内部转账只能在同一家公司的账户之间调钱；跨公司要走往来，不能用内部转账'),
     ('W23', '科目表的「报表项目」填了非法值',
      f'SUMPRODUCT(({SUBJ_N}<>"")*(COUNTIF(报表项目清单,{SUBJ_ITEM})=0))', '0', '高',
@@ -2112,15 +2520,44 @@ RULES = [
     ('W18', '业务单上的往来单位没在主档里建过',
      f'SUMPRODUCT(({PU("F")}<>"")*(COUNTIF({PT_N},{PU("F")})=0))'
      f'+SUMPRODUCT(({SA("G")}<>"")*(COUNTIF({PT_N},{SA("G")})=0))'
-     f'+SUMPRODUCT(({CA("F")}<>"")*(COUNTIF({PT_N},{CA("F")})=0))', '0', '中',
+     f'+SUMPRODUCT(({CA("G")}<>"")*(COUNTIF({PT_N},{CA("G")})=0))', '0', '中',
      '去《往来单位主档》补一条，并勾上它的身份'),
     ('W19', '同一家往来单位在两家以上公司都有余额',
-     f'SUM(综合往来对账!$U${PTD0}:$U${PTD1})', '0', '提示',
+     f'SUM(综合往来对账!$V${PTD0}:$V${PTD1})', '0', '提示',
      '这不是错 —— 只是提醒你：跨公司的应收应付不能互相抵销，想抵要走内部交易或分别结算'),
     ('W20', '内部转账两边对不上（一出一入应当轧差为 0）',
-     f'IF(ROUND(SUMIFS({CA("H")},{CA("P")},"不计入")-SUMIFS({CA("I")},{CA("P")},"不计入"),2)=0,0,1)',
-     f'ROUND(SUMIFS({CA("H")},{CA("P")},"不计入")-SUMIFS({CA("I")},{CA("P")},"不计入"),2)', '高',
+     f'IF(ROUND(SUMIFS({CA("I")},{CA("Q")},"不计入")-SUMIFS({CA("J")},{CA("Q")},"不计入"),2)=0,0,1)',
+     f'ROUND(SUMIFS({CA("I")},{CA("Q")},"不计入")-SUMIFS({CA("J")},{CA("Q")},"不计入"),2)', '高',
      '平台提现要记两行：平台户「内部转账-转出」＋银行户「内部转账-转入」，金额一样'),
+    ('W24', '受托代发：代收的货款还没结给委托店铺',
+     f'COUNTIF({TR("AE")},">0.01")', f'ROUND(SUMIF({TR("AE")},">0.01"),2)', '高',
+     '★ 这是别人的钱，在我们账上挂「其他应付款—代收货款」。结给委托方时去《资金流水》记'
+     '「付-代发结款」并填代发单号；确实要抵掉它欠我们的供货款，就在《手工凭证》做正式抵销'),
+    ('W25', '受托代发：委托方的供货款还没结过来',
+     f'COUNTIF({TR("AF")},">0.01")', f'ROUND(SUMIF({TR("AF")},">0.01"),2)', '中',
+     '款走的是委托店铺自己的账户，我们只挂应收 —— 去催款，收到后在《资金流水》记'
+     '「收-代发服务费」并填代发单号'),
+    ('W26', '平台结算单与销售登记对不上',
+     f'COUNTIF({PS("AB")},">=1")', f'ROUND(SUMIF({PS("AB")},">=1"),2)', '高',
+     '平台账单的「货款−退款」跟《销售登记》同店同期的合计对不上。常见原因：有几天的单漏录了、'
+     '退款算在了别的期间、或者店铺填错了'),
+    ('W27', '平台结算单还没到账',
+     f'COUNTIF({PS("AC")},">0.01")', f'ROUND(SUMIF({PS("AC")},">0.01"),2)', '中',
+     '平台还欠我们的货款。到账那天在《资金流水》记「收-平台结算」，关联单号填结算单号 —— '
+     '一个月一个店就这一笔，不用去关联订单'),
+    ('W28', '「结算单认收入」的月份没做月末盘点（这批零售没有成本）',
+     f'SUM({PS("AD")})', '0', '高',
+     '★ 零售走结算单汇总认收入，就没有按单结转的成本 —— 必须在《月末盘点与成本》填上那个月的实盘金额，'
+     '差额才会自动补成主营业务成本，否则利润虚高'),
+    ('W29', '推广费可能记了两遍（结算单扣过，《费用及其他》又登了一笔）',
+     f'SUM({PS("AE")})', '0', '高',
+     '平台账单里**直接扣掉**的推广费只填结算单；单独打款买的推广才进《费用及其他》。'
+     '两边都记会让销售费用翻倍'),
+    ('W30', '月末盘点差异过大（超过账面存货的 10%）',
+     f'COUNTIF({MT("O")},">0.1")', '0', '中',
+     '先别急着认盘点差异：查一下是不是漏登了采购、或者某个月的销售成本算错了。'
+     '确认没问题再让它自动调。★ 走《平台结算单》「结算单认收入」的月份不算在内 —— '
+     '那种月份本来就要靠盘点把整月零售成本轧出来，差异大是正常的'),
 ]
 r = 4
 for no, nm, cnt, amt, sev, how in RULES:
@@ -2177,12 +2614,12 @@ headers(ws, HDR, ['编号', '勾稽关系', '应该等于', '实际是', '差异
 widths(ws, {'A': 7, 'B': 36, 'C': 18, 'D': 18, 'E': 15, 'F': 52})
 AVT = f'自动凭证!$I${AT}'
 AVTC = f'自动凭证!$J${AT}'
-MVT = f'手工凭证!$I${MT}'
-MVTC = f'手工凭证!$J${MT}'
+MV_D = f'手工凭证!$I${MVT}'
+MV_C = f'手工凭证!$J${MVT}'
 CHECKS = [
     ('J01', '自动凭证：借方合计 = 贷方合计', AVT, AVTC,
      '不平说明展开规则被改坏了，或者某张业务单的金额列有非数字'),
-    ('J02', '手工凭证：借方合计 = 贷方合计', MVT, MVTC,
+    ('J02', '手工凭证：借方合计 = 贷方合计', MV_D, MV_C,
      '去《手工凭证》L 列找 ✘ 的那张凭证字号'),
     ('J03', '科目余额表：本期借方合计 = 本期贷方合计',
      f'科目余额表!$J${SBT}', f'科目余额表!$K${SBT}',
@@ -2227,8 +2664,18 @@ CHECKS = [
      f'-{rep(Q("所得税费用"), "DR", "ytd")},2)',
      '不等说明有损益类科目的「报表项目」没填'),
     ('J14', '内部转账轧差 = 0（平台提现一出一入）',
-     '0', f'ROUND(SUMIFS({CA("H")},{CA("P")},"不计入")-SUMIFS({CA("I")},{CA("P")},"不计入"),2)',
+     '0', f'ROUND(SUMIFS({CA("I")},{CA("Q")},"不计入")-SUMIFS({CA("J")},{CA("Q")},"不计入"),2)',
      '少记了配对的那一行，或者两行金额填得不一样'),
+    ('J17', '综合往来：代收货款余额合计 = 科目「其他应付款—代收货款」期末',
+     f'综合往来对账!$O${PTT}',
+     f'ROUND(SUMIF({SB("B")},"其他应付款—代收货款",{SB("O")})'
+     f'-SUMIF({SB("B")},"其他应付款—代收货款",{SB("N")}),2)',
+     '受托代发代收的钱是别人的 —— 差额多半是某笔「收-代收货款」没填委托方，或者委托方名字写得不一样'),
+    ('J18', '受托代发：我的收入合计 = 凭证池里「受托代发」来源的收入',
+     f'ROUND(SUMIFS({TR("Q")},{TR("D")},公司条件,{TR("AD")},">="&年初年月,{TR("AD")},"<="&截止年月),2)',
+     f'ROUND(SUMIFS({AV("J")},{AV("K")},"受托代发",{AV("F")},"主营业务收入",{AV("C")},公司条件,'
+     f'{AV("L")},">="&年初年月,{AV("L")},"<="&截止年月),2)',
+     '登记页算出来的「我的收入合计」应当和自动凭证生成的收入一分不差'),
     ('J15', '期初往来明细合计 = 期初主区（应收/应付）',
      f'ROUND(期初余额!$J${PT}+期初余额!$K${PT},2)',
      f'ROUND(SUMIF({OPEN_SUB},"应收账款",{OPEN_D})+SUMIF({OPEN_SUB},"应付账款",{OPEN_C}),2)',
@@ -2306,6 +2753,9 @@ MONEYS = [
     ('应收返利', f'ROUND(SUMIF({SB("B")},"其他应收款—应收返利",{SB("N")})'
                  f'-SUMIF({SB("B")},"其他应收款—应收返利",{SB("O")}),2)', '供应商确认了还没打的返利'),
     ('我欠别人（应付账款）', f'{rep(Q("应付账款"), "CR", "end")}', '欠供应商、代发商、费用的钱'),
+    ('代收货款（别人的钱）', f'ROUND(SUMIF({SB("B")},"其他应付款—代收货款",{SB("O")})'
+                            f'-SUMIF({SB("B")},"其他应付款—代收货款",{SB("N")}),2)',
+     '★ 受托代发替委托店铺收的钱，在我们账上但不是我们的，早晚要结出去'),
     ('借款余额', f'ROUND({rep(Q("短期借款"), "CR", "end")}+SUMIF({SB("B")},"其他应付款—股东借款",{SB("O")})'
                  f'-SUMIF({SB("B")},"其他应付款—股东借款",{SB("N")}),2)', '资方和股东借给公司的钱'),
     ('库存金额', f'{rep(Q("存货"), "DR", "end")}', '还压在仓库里的钱'),
@@ -2316,9 +2766,14 @@ for nm, f, note in MONEYS:
     put(ws, f'G{r}', f'=ROUND({f},2)', font=F_TOT, fill=FILL_KPI, fmt=MONEY0)
     put(ws, f'H{r}', note, font=F_NOTE, fill=FILL_KPI, align=CL)
     r += 1
+put(ws, f'F{r}', '经 营 净 往 来', font=F_TOT, fill=FILL_KPI, align=CL)
+put(ws, f'G{r}', f'=ROUND(综合往来对账!$P${PTT},2)', font=F_TOT, fill=FILL_KPI, fmt=MONEY0)
+put(ws, f'H{r}', '应收 − 应付 − 代收货款：生意本身是别人欠我、还是我欠别人', font=F_NOTE, fill=FILL_KPI, align=CL)
+r += 1
 put(ws, f'F{r}', '净 资 金 敞 口', font=F_TOT, fill=FILL_TOT, align=CL)
-put(ws, f'G{r}', '=ROUND($G6+$G7+$G8-$G9-$G10,2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY0)
-put(ws, f'H{r}', '现金＋应收＋返利 −应付 −借款；为负说明账上的钱不够还', font=F_NOTE, fill=FILL_TOT, align=CL)
+put(ws, f'G{r}', '=ROUND($G6+$G7+$G8-$G9-$G10-$G11,2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY0)
+put(ws, f'H{r}', '现金＋应收＋返利 −应付 −代收货款 −借款；为负说明账上的钱不够还',
+    font=F_NOTE, fill=FILL_TOT, align=CL)
 
 put(ws, 'J4', '红 灯 与 勾 稽', font=F_SEC, fill=FILL_SEC, align=CL)
 ws.merge_cells('J4:L4')
@@ -2330,13 +2785,13 @@ put(ws, 'J7', '报表勾稽', font=F_TXT, fill=FILL_KPI, align=CL)
 put(ws, 'K7', f'=SUMPRODUCT((ABS(N(报表勾稽检查!$E$4:$E${JT-1}))>=0.01)*1)', font=F_TOT, fill=FILL_KPI, fmt='#,##0')
 put(ws, 'L7', f'=IF(N($K7)=0,"✔ 全部对得上","✘ 有不平项")', font=F_WARN, fill=FILL_KPI)
 put(ws, 'J8', '逾期未收（笔）', font=F_TXT, fill=FILL_KPI, align=CL)
-put(ws, 'K8', f'=COUNTIFS({SA("AB")},">0")', font=F_TOT, fill=FILL_KPI, fmt='#,##0')
+put(ws, 'K8', f'=COUNTIFS({SA("Y")},">0")', font=F_TOT, fill=FILL_KPI, fmt='#,##0')
 put(ws, 'L8', '销售过了账期还没回款', font=F_NOTE, fill=FILL_KPI, align=CL)
 put(ws, 'J9', '逾期未付（笔）', font=F_TXT, fill=FILL_KPI, align=CL)
-put(ws, 'K9', f'=COUNTIFS({PU("Z")},">0")', font=F_TOT, fill=FILL_KPI, fmt='#,##0')
+put(ws, 'K9', f'=COUNTIFS({PU("W")},">0")', font=F_TOT, fill=FILL_KPI, fmt='#,##0')
 put(ws, 'L9', '采购过了信用期还没付', font=F_NOTE, fill=FILL_KPI, align=CL)
 put(ws, 'J10', '缺进项票金额', font=F_TXT, fill=FILL_KPI, align=CL)
-put(ws, 'K10', f'=ROUND(SUMIFS({PU("L")},{PU("AB")},"未开票")+SUMIFS({PU("L")},{PU("AB")},"部分开票"),2)',
+put(ws, 'K10', f'=ROUND(SUMIFS({PU("L")},{PU("Y")},"未开票")+SUMIFS({PU("L")},{PU("Y")},"部分开票"),2)',
     font=F_TOT, fill=FILL_KPI, fmt=MONEY0)
 put(ws, 'L10', '影响进项抵扣和所得税', font=F_NOTE, fill=FILL_KPI, align=CL)
 put(ws, 'J11', '返利未收金额', font=F_TXT, fill=FILL_KPI, align=CL)
@@ -2389,8 +2844,8 @@ for k in range(1, 11):
     put(ws, f'F{rr}', f'=IF(INDEX({ACC_N},{k})="","",IF(COUNTIF(INDEX({ACC_CO},{k}),公司条件)>0,'
                       f'INDEX({ACC_N},{k}),""))', font=F_TXT, fill=FILL_AUTO, align=CL)
     put(ws, f'G{rr}', f'=IF($F{rr}="","",ROUND(IFERROR(INDEX({OPA_V},MATCH($F{rr},{OPA_N},0)),0)'
-                      f'+SUMIFS({CA("H")},{CA("D")},$F{rr},{CA("R")},"<="&截止年月)'
-                      f'-SUMIFS({CA("I")},{CA("D")},$F{rr},{CA("R")},"<="&截止年月),2))',
+                      f'+SUMIFS({CA("I")},{CA("E")},$F{rr},{CA("S")},"<="&截止年月)'
+                      f'-SUMIFS({CA("J")},{CA("E")},$F{rr},{CA("S")},"<="&截止年月),2))',
         font=F_TOT, fill=FILL_AUTO, fmt=MONEY0)
     put(ws, f'H{rr}', f'=IF($F{rr}="","",IFERROR(INDEX({ACC_CO},MATCH($F{rr},{ACC_N},0)),""))',
         font=F_AUTO, fill=FILL_AUTO)
@@ -2414,40 +2869,68 @@ title(ws, '测 试 说 明（TEST 案例清单 · 验收照着这个走）', 'E'
 headers(ws, HDR, ['所在表', '案例编号', '测试点', '预期看到的结果', '在哪验证'])
 widths(ws, {'A': 16, 'B': 10, 'C': 30, 'D': 52, 'E': 26})
 CASES = [
-    ('采购登记', 'TEST01', '按比例返利', '应收返利＝不含税×2%；实际采购成本＝不含税−返利', '采购登记 R/S 列'),
+    ('采购登记', 'TEST01', '按比例返利', '应收返利＝含税金额 45,000×2%＝900；实际采购成本＝45,000−900＝44,100', '采购登记 O/P 列'),
     ('采购登记', 'TEST03', '部分付款', '应付 49,600 只付了 30,000 → 付款状态「部分付款」', '收付款核销中心 下半张'),
     ('采购登记', 'TEST05', '采购缺票', '票据状态「未开票」', '异常预警 W02'),
-    ('采购登记', 'TEST10', '采购退货', '数量 −50，金额/成本/返利一起变负', '采购登记 L/S 列'),
-    ('采购登记', 'TEST11', '固定金额返利', '填了返利金额 1500 就不再按比例算', '采购登记 Q/R 列'),
+    ('采购登记', 'TEST10', '采购退货', '数量 −50，金额/成本/返利一起变负', '采购登记 L/P 列'),
+    ('采购登记', 'TEST11', '固定金额返利', '填了返利金额 1500 就不再按比例算', '采购登记 N/O 列'),
     ('采购登记', 'TEST13', '逾期未付', '过了 30 天信用期一分没付 → 逾期天数 > 0', '异常预警 W01'),
-    ('销售登记', 'TEST01', '平台扣费', '扣费一边进销售费用、一边冲应收；到账＝含税−扣费', '自动凭证 销-XS2026001'),
+    ('销售登记', 'TEST01', '平台扣费', '扣费一边进销售费用、一边冲应收；到账＝销售金额−扣费。收入按含税全额记，不拆销项税',
+     '自动凭证 销-XS2026001'),
     ('销售登记', 'TEST04', '抖音高佣金', '同样的货，抖音扣 5% 比拼多多 0.6% 毛利低很多', '店铺利润分析'),
     ('销售登记', 'TEST07', '批发部分回款', '应收 23,800 只回 15,000 → 未回 8,800', '收付款核销中心 上半张'),
-    ('销售登记', 'TEST10', '退款', '数量 −20、扣费也退 → 收入成本税一起冲回', '利润表'),
+    ('销售登记', 'TEST10', '退款', '数量 −20、扣费也退 → 收入和成本一起冲回', '利润表'),
     ('销售登记', 'TEST12', '卖给供应商', '宏发既是供应商又是客户，应收应付分开列', '综合往来对账 宏发那一行'),
     ('销售登记', 'TEST16', '逾期未回款', '过了 7 天账期还没结算 → 逾期天数 > 0', '异常预警 W04'),
-    ('返利登记', 'TEST02', '返利未收', '确认了 658.41 但一直没到账', '异常预警 W08'),
-    ('返利登记', 'TEST03', '返利部分收', '确认 594.69 只收到 300', '返利登记 K/L 列'),
-    ('返利登记', 'TEST05', '返利上调差异', '确认 700 > 账面 647.79 → 差异 +52.21 自动冲成本', '自动凭证 返-FL2026005'),
-    ('返利登记', 'TEST09', '返利核减差异', '确认 150 < 账面 180.53 → 差异 −30.53 自动加回成本', '自动凭证 返-FL2026009'),
+    ('返利登记', 'TEST02', '返利未收', '确认了 744 但一直没到账', '异常预警 W08'),
+    ('返利登记', 'TEST03', '返利部分收', '确认 672 只收到 300', '返利登记 K/L 列'),
+    ('返利登记', 'TEST05', '返利上调差异', '确认 800 > 账面 732 → 差异 +68 自动冲成本', '自动凭证 返-FL2026005'),
+    ('返利登记', 'TEST09', '返利核减差异', '确认 180 < 账面 204 → 差异 −24 自动加回成本', '自动凭证 返-FL2026009'),
     ('返利登记', 'TEST10', '账面没有的临时返利', '账面 0、确认 500 → 全额都是差异调整', '返利登记 J 列'),
     ('一件代发', 'TEST01', '代发不进库存', '成本直接进主营业务成本，库存商品一分不动', '商品库存与成本（查不到这几笔）'),
     ('一件代发', 'TEST06', '欠代发商货款', '一分没付 → 结算状态「欠代发商货款」', '收付款核销中心 下半张'),
-    ('一件代发', 'TEST10', '代发退货', '数量 −10，售价成本扣费一起冲回', '一件代发结算 L/S/U 列'),
+    ('一件代发', 'TEST10', '代发退货', '数量 −10，售价成本扣费一起冲回', '一件代发结算 L/N/U 列'),
     ('资金流水', 'TEST04/05', '平台提现（内部转账）', '一出一入两行，损益不受影响，现金流第四行轧差为 0', '现金流简表 第四行'),
     ('资金流水', 'TEST12', '资方借款', '宏发借 10 万走短期借款，不混进应付货款', '综合往来对账 宏发「借款余额」'),
     ('资金流水', 'TEST13', '股东借款', '张伟借 5 万走其他应付款—股东借款，不是收入', '科目余额表'),
     ('资金流水', 'TEST23', '交保证金', '保证金是资产（其他应收款—保证金），不是费用', '资产负债表 其他应收款'),
     ('资金流水', 'TEST27', '买固定资产', '走投资活动，不进经营活动现金流', '现金流简表 二、投资活动'),
-    ('资金流水', 'TEST35', '科目手工覆盖', '填了「营业外支出」就不按资金规则自动判了', '资金流水 O 列'),
-    ('发票台账', 'TEST05', '返利发票', '返利收到红字票，配套一张进项转出的手工凭证', '手工凭证 记-2026-006'),
-    ('费用及其他', 'TEST09', '固定资产', '费用项目选「购置固定资产」→ 对应科目自动变成固定资产', '费用及其他 M 列'),
+    ('资金流水', 'TEST21', '缴税直接进费用', '内帐口径：缴的增值税 6,000 直接进「税金及附加」，不挂应交税费', '利润表 税金及附加'),
+    ('资金流水', 'TEST35', '科目手工覆盖', '填了「营业外支出」就不按资金规则自动判了', '资金流水 N 列'),
+    ('发票台账', 'TEST05', '返利发票', '内帐不做进项转出 —— 这张表只记「票到了没有」，不生成任何凭证', '发票台账 G/J 列'),
+    ('费用及其他', 'TEST09', '固定资产', '费用项目选「购置固定资产」→ 借方科目自动变成固定资产；金额按含税 18,000', '费用及其他 J 列'),
     ('费用及其他', 'TEST01', '店铺费用', '填了店铺的费用会摊到那个店；没填的算公司共同费用', '店铺利润分析'),
     ('手工凭证', 'TEST01', '折旧', '业务登记做不出来，只能手工计提', '利润表 管理费用'),
     ('手工凭证', 'TEST03', '正式往来抵销', '填了关联单号，采购 CG2026009 和销售 XS2026012 双边自动认',
-     '采购登记 U 列 / 销售登记 W 列'),
+     '采购登记 R 列 / 销售登记 T 列'),
     ('手工凭证', 'TEST08', '没票也要计提', '权责发生制：6 月房租没拿到票也进当期费用', '利润表'),
     ('手工凭证', 'TEST10', '故意做不平', '现在借贷都是 0＝平的；填个数试试勾稽会不会抓到', '报表勾稽检查 J02'),
+    ('销售登记', 'TEST17', '★ 按月汇总录入', '5 月旗舰店保温杯 900 个/704 笔只录一行 —— 不用一单一行',
+     '销售登记 N 列「订单笔数」'),
+    ('平台结算单', 'TEST01', '平台账单对账', '1 月旗舰店：平台账单 55,300−佣金 331.80＝54,968.20，'
+     '正好等于资金流水两笔到账之和', '平台结算单 W/X/Y 列'),
+    ('平台结算单', 'TEST06', '★ 对不上会亮红', '平台把退款算进了本期，与销售登记差 1,570.52 → 对账状态 ✘',
+     '异常预警 W26'),
+    ('平台结算单', 'TEST09', '★★ 零售不录明细', '6 月 4,820 笔订单只录这一行：收入/退款/佣金/推广/其他扣费一次搞定，'
+     '资金流水也只有一笔到账', '自动凭证 平-PS2026009'),
+    ('平台结算单', 'TEST10', '平台还欠我们的', '结算单认收入但还没到账 → 未到账 70,705', '异常预警 W27'),
+    ('受托代发', 'TEST01', '★★ 代收货款', '代收 13,200 先整笔挂「其他应付款—代收货款」；'
+     '只有供货价 8,250＋服务费 300 算我的收入；应退小鹿 3,990',
+     '综合往来对账 O 列 / 自动凭证 托-TD2026001'),
+    ('受托代发', 'TEST02', '款到委托方', '钱进潮玩自己账户，我只按供货价 7,500 挂应收，不出现代收货款',
+     '受托代发登记 L/Y 列'),
+    ('受托代发', 'TEST05', '委托方欠我供货款', '潮玩一直没结 10,200 → 挂应收，逾期', '异常预警 W25'),
+    ('受托代发', 'TEST06', '还欠委托方的钱', '应退 3,762 只结了 2,000 → 还欠委托方 1,762', '异常预警 W24'),
+    ('受托代发', 'TEST10', '代发退货', '数量 −15：代收货款/收入/成本/应退委托方一起冲回', '受托代发登记 L/Q/T 列'),
+    ('手工凭证', 'TEST06', '代收货款抵销', '欠小鹿的代收货款 1,762 抵掉小鹿欠我的供货款，两边同时消掉',
+     '受托代发登记 AA 列 / Y 列'),
+    ('月末盘点', 'TEST03', '季末盘点纠偏', '账面与实盘的差额自动出一张「借主营业务成本／贷库存商品」的调整凭证',
+     '自动凭证 盘-202603-甲公司'),
+    ('月末盘点', 'TEST06', '★★ 零售成本出口', '6 月只录了平台结算单没录销售明细，账面库存没减；'
+     '月末盘出来只剩 96,000，差额自动补成主营业务成本', '报表勾稽检查 J09'),
+    ('月末盘点', 'TEST01', '不盘就不动账', '实盘金额留空 ＝ 这个月不盘点，不出任何凭证', '月末盘点与成本 M 列'),
+    ('查询设置', '—', '★ 成本算法三选一', 'A 月加权平均 / B 毛利率倒轧 / C 月末盘点倒轧，改这一格全表跟着变',
+     '销售登记 P 列'),
     ('期初余额', '—', '一年一个账套', '年初数在这里录，明细三小区要跟主区对上', '报表勾稽检查 J05/J15'),
     ('查询设置', '—', '月份＋公司统一切换', '把月份改成 3，所有报表和看板一起跳到 3 月', '利润表 / 老板看板'),
 ]
@@ -2461,8 +2944,10 @@ for a, b, c, d, e in CASES:
     r += 1
 put(ws, f'A{r+1}',
     f'一共 {len(CASES)} 个测试点，覆盖了：部分付款、部分回款、返利未收、返利差异（上调/核减/凭空）、采购缺票、'
-    '返利发票、平台扣费、退货退款、一件代发、资方兼客户兼供应商、融资借款、股东借款、正式往来抵销、'
-    '固定资产、保证金、内部转账、店铺合作方分成、跨公司不抵销、科目手工覆盖。',
+    '返利发票、平台扣费、退货退款、一件代发（我卖别人发）、受托代发（我发别人卖，含代收货款与两种资金归属）、'
+    '平台批量结算与账单对账、零售不录明细、月末盘点倒轧成本、按月汇总录入、'
+    '资方兼客户兼供应商、融资借款、股东借款、正式往来抵销、代收货款抵销、'
+    '固定资产、保证金、内部转账、店铺合作方分成、跨公司不抵销、科目手工覆盖、内帐含税口径缴税直接进费用。',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells(f'A{r+1}:E{r+2}')
 ws.freeze_panes = 'A4'
@@ -2533,19 +3018,34 @@ for p in range(N_CO_MAX * N_ITEM):
     put(ws, f'V{r}', f'=N(V{r-1})+$U{r}', font=F_AUTO, border=None, fmt='0')
 
 # —— ④ 应收核销池（销售 + 一件代发）——
-for p in range(N_SAL + N_DRP):
+for p in range(N_SAL + N_DRP + N_TRS + N_PS):
     r = X_AR0 + p
     if p < N_SAL:
         sr = S0 + p
         cols = ('"销售"', f'销售登记!$C{sr}', f'销售登记!$B{sr}', f'销售登记!$D{sr}', f'销售登记!$G{sr}',
-                f'ROUND(N(销售登记!$M{sr})-N(销售登记!$Q{sr}),2)', f'N(销售登记!$W{sr})', f'N(销售登记!$X{sr})')
+                f'ROUND(N(销售登记!$M{sr})-N(销售登记!$O{sr}),2)', f'N(销售登记!$T{sr})', f'N(销售登记!$U{sr})')
         key = f'销售登记!$C{sr}'
-    else:
+    elif p < N_SAL + N_DRP:
         sr = F0 + (p - N_SAL)
         cols = ('"一件代发"', f'一件代发结算!$C{sr}', f'一件代发结算!$B{sr}', f'一件代发结算!$D{sr}',
-                f'一件代发结算!$G{sr}', f'ROUND(N(一件代发结算!$L{sr})-N(一件代发结算!$U{sr}),2)',
-                f'N(一件代发结算!$W{sr})', f'N(一件代发结算!$X{sr})')
+                f'一件代发结算!$G{sr}', f'ROUND(N(一件代发结算!$L{sr})-N(一件代发结算!$O{sr}),2)',
+                f'N(一件代发结算!$Q{sr})', f'N(一件代发结算!$R{sr})')
         key = f'一件代发结算!$C{sr}'
+    elif p < N_SAL + N_DRP + N_TRS:
+        sr = TRS0 + (p - N_SAL - N_DRP)
+        cols = ('"受托代发"', f'受托代发登记!$C{sr}', f'受托代发登记!$B{sr}', f'受托代发登记!$D{sr}',
+                f'受托代发登记!$E{sr}',
+                f'IF(受托代发登记!$G{sr}="款到我司",N(受托代发登记!$S{sr}),N(受托代发登记!$Q{sr}))',
+                f'N(受托代发登记!$X{sr})', f'N(受托代发登记!$Y{sr})')
+        key = f'受托代发登记!$C{sr}'
+    else:
+        sr = PSS0 + (p - N_SAL - N_DRP - N_TRS)
+        cols = ('"平台结算"', f'平台结算单!$C{sr}', f'平台结算单!$B{sr}', f'平台结算单!$D{sr}',
+                f'IFERROR(INDEX({SP_PT},MATCH(平台结算单!$E{sr},{SP_N},0)),平台结算单!$F{sr})',
+                f'N(平台结算单!$Q{sr})',
+                f'ROUND(N(平台结算单!$R{sr})+N(平台结算单!$S{sr}),2)', f'N(平台结算单!$T{sr})')
+        # 「销售登记认收入」的结算单，应收已经在销售登记那边跟了，这里不能再算一遍
+        key = f'IF(平台结算单!$U{sr}="结算单认收入",平台结算单!$C{sr},"")'
     for c, f in zip(('X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE'), cols):
         put(ws, f'{c}{r}', f'=IF({key}="","",{f})', font=F_AUTO, border=None,
             fmt=MONEY if c in ('AC', 'AD', 'AE') else (DATEQ if c == 'Z' else None))
@@ -2554,24 +3054,30 @@ for p in range(N_SAL + N_DRP):
     put(ws, f'AG{r}', f'=N(AG{r-1})+$AF{r}', font=F_AUTO, border=None, fmt='0')
 
 # —— ⑤ 应付核销池（采购 + 一件代发 + 费用）——
-for p in range(N_PUR + N_DRP + N_EXP):
+for p in range(N_PUR + N_DRP + N_EXP + N_TRS):
     r = X_AP0 + p
     if p < N_PUR:
         sr = P0 + p
         key = f'采购登记!$C{sr}'
         cols = ('"采购"', f'采购登记!$C{sr}', f'采购登记!$B{sr}', f'采购登记!$D{sr}', f'采购登记!$F{sr}',
-                f'N(采购登记!$L{sr})', f'N(采购登记!$U{sr})', f'N(采购登记!$V{sr})')
+                f'N(采购登记!$L{sr})', f'N(采购登记!$R{sr})', f'N(采购登记!$S{sr})')
     elif p < N_PUR + N_DRP:
         sr = F0 + (p - N_PUR)
         key = f'一件代发结算!$C{sr}'
         cols = ('"一件代发"', f'一件代发结算!$C{sr}', f'一件代发结算!$B{sr}', f'一件代发结算!$D{sr}',
-                f'一件代发结算!$F{sr}', f'N(一件代发结算!$Q{sr})', f'N(一件代发结算!$Y{sr})',
-                f'N(一件代发结算!$Z{sr})')
-    else:
+                f'一件代发结算!$F{sr}', f'N(一件代发结算!$N{sr})', f'N(一件代发结算!$S{sr})',
+                f'N(一件代发结算!$T{sr})')
+    elif p < N_PUR + N_DRP + N_EXP:
         sr = E0 + (p - N_PUR - N_DRP)
         key = f'费用及其他!$G{sr}'
         cols = ('"费用"', f'费用及其他!$G{sr}', f'费用及其他!$B{sr}', f'费用及其他!$C{sr}',
-                f'费用及其他!$F{sr}', f'N(费用及其他!$L{sr})', f'N(费用及其他!$O{sr})', f'N(费用及其他!$P{sr})')
+                f'费用及其他!$F{sr}', f'N(费用及其他!$I{sr})', f'N(费用及其他!$L{sr})', f'N(费用及其他!$M{sr})')
+    else:
+        sr = TRS0 + (p - N_PUR - N_DRP - N_EXP)
+        key = f'IF(受托代发登记!$G{sr}="款到我司",受托代发登记!$C{sr},"")'
+        cols = ('"受托代发·欠委托方"', f'受托代发登记!$C{sr}', f'受托代发登记!$B{sr}',
+                f'受托代发登记!$D{sr}', f'受托代发登记!$E{sr}',
+                f'N(受托代发登记!$T{sr})', f'N(受托代发登记!$Z{sr})', f'N(受托代发登记!$AA{sr})')
     for c, f in zip(('AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP'), cols):
         put(ws, f'{c}{r}', f'=IF({key}="","",{f})', font=F_AUTO, border=None,
             fmt=MONEY if c in ('AN', 'AO', 'AP') else (DATEQ if c == 'AK' else None))
@@ -2585,21 +3091,21 @@ EX_SRC = []
 for i in range(N_PUR):
     sr = P0 + i
     EX_SRC.append(('"采购登记"', f'采购登记!$C{sr}', f'采购登记!$B{sr}', f'采购登记!$D{sr}', f'采购登记!$F{sr}',
-        f'IF(N(采购登记!$Z{sr})>0,"采购逾期未付",'
-        f'IF(AND(N(采购登记!$V{sr})<-0.01,N(采购登记!$L{sr})>0),"采购付超（已付大于应付）",'
-        f'IF(OR(采购登记!$AB{sr}="未开票",采购登记!$AB{sr}="部分开票"),"采购缺票",'
+        f'IF(N(采购登记!$W{sr})>0,"采购逾期未付",'
+        f'IF(AND(N(采购登记!$S{sr})<-0.01,N(采购登记!$L{sr})>0),"采购付超（已付大于应付）",'
+        f'IF(OR(采购登记!$Y{sr}="未开票",采购登记!$Y{sr}="部分开票"),"采购缺票",'
         f'IF({NOPARTY(f"采购登记!$F{sr}")},"供应商没在主档里建过",""))))',
-        f'IF(N(采购登记!$Z{sr})>0,N(采购登记!$V{sr}),'
-        f'IF(N(采购登记!$V{sr})<-0.01,-N(采购登记!$V{sr}),N(采购登记!$L{sr})))'))
+        f'IF(N(采购登记!$W{sr})>0,N(采购登记!$S{sr}),'
+        f'IF(N(采购登记!$S{sr})<-0.01,-N(采购登记!$S{sr}),N(采购登记!$L{sr})))'))
 for i in range(N_SAL):
     sr = S0 + i
     EX_SRC.append(('"销售登记"', f'销售登记!$C{sr}', f'销售登记!$B{sr}', f'销售登记!$D{sr}', f'销售登记!$G{sr}',
-        f'IF(AND(N(销售登记!$K{sr})<>0,销售登记!$R{sr}=""),"销售取不到成本（这个商品没进过货）",'
-        f'IF(N(销售登记!$AB{sr})>0,"销售逾期未回款",'
-        f'IF(AND(N(销售登记!$X{sr})<-0.01,N(销售登记!$M{sr})>0),"销售收超（已收大于应收）",'
-        f'IF(OR(销售登记!$AD{sr}="未开票",销售登记!$AD{sr}="部分开票"),"销售缺票",'
+        f'IF(AND(N(销售登记!$K{sr})<>0,销售登记!$P{sr}=""),"销售取不到成本（这个商品没进过货）",'
+        f'IF(N(销售登记!$Y{sr})>0,"销售逾期未回款",'
+        f'IF(AND(N(销售登记!$U{sr})<-0.01,N(销售登记!$M{sr})>0),"销售收超（已收大于应收）",'
+        f'IF(OR(销售登记!$AA{sr}="未开票",销售登记!$AA{sr}="部分开票"),"销售缺票",'
         f'IF({NOPARTY(f"销售登记!$G{sr}")},"客户没在主档里建过","")))))',
-        f'IF(N(销售登记!$AB{sr})>0,N(销售登记!$X{sr}),N(销售登记!$M{sr}))'))
+        f'IF(N(销售登记!$Y{sr})>0,N(销售登记!$U{sr}),N(销售登记!$M{sr}))'))
 for i in range(N_RBT):
     sr = B0 + i
     EX_SRC.append(('"返利登记"', f'返利登记!$B{sr}', f'返利登记!$C{sr}', f'返利登记!$D{sr}', f'返利登记!$E{sr}',
@@ -2612,34 +3118,55 @@ for i in range(N_DRP):
     sr = F0 + i
     EX_SRC.append(('"一件代发"', f'一件代发结算!$C{sr}', f'一件代发结算!$B{sr}', f'一件代发结算!$D{sr}',
         f'一件代发结算!$F{sr}',
-        f'IF(OR(一件代发结算!$AA{sr}="",一件代发结算!$AA{sr}="已结清"),"","代发"&一件代发结算!$AA{sr})',
-        f'N(一件代发结算!$X{sr})+N(一件代发结算!$Z{sr})'))
+        f'IF(OR(一件代发结算!$U{sr}="",一件代发结算!$U{sr}="已结清"),"","代发"&一件代发结算!$U{sr})',
+        f'N(一件代发结算!$R{sr})+N(一件代发结算!$T{sr})'))
+for i in range(N_TRS):
+    sr = TRS0 + i
+    EX_SRC.append(('"受托代发"', f'受托代发登记!$C{sr}', f'受托代发登记!$B{sr}', f'受托代发登记!$D{sr}',
+        f'受托代发登记!$E{sr}',
+        f'IF(OR(受托代发登记!$AB{sr}="",受托代发登记!$AB{sr}="已结清"),"",'
+        f'IF({NOPARTY(f"受托代发登记!$E{sr}")},"委托方没在主档里建过","受托代发"&受托代发登记!$AB{sr}))',
+        f'N(受托代发登记!$Y{sr})+N(受托代发登记!$AA{sr})'))
+for i in range(N_PS):
+    sr = PSS0 + i
+    EX_SRC.append(('"平台结算单"', f'平台结算单!$C{sr}', f'平台结算单!$B{sr}', f'平台结算单!$D{sr}',
+        f'平台结算单!$E{sr}',
+        f'IF(平台结算单!$B{sr}="","",'
+        f'IF(AND(平台结算单!$U{sr}="销售登记认收入",ABS(N(平台结算单!$X{sr}))>=1),'
+        f'"平台账单与销售登记对不上",'
+        f'IF(ROUND(N(平台结算单!$T{sr}),2)>0.01,"平台结算还没到账",'
+        f'IF(AND(平台结算单!$U{sr}="结算单认收入",N(平台结算单!$M{sr})>0,'
+        f'COUNTIFS({EP("D")},平台结算单!$E{sr},{EP("C")},平台结算单!$D{sr},'
+        f'{EP("E")},"平台推广费",{EP("P")},N(平台结算单!$AA{sr}))>0),'
+        f'"推广费可能记了两遍（结算单扣过，费用页又登了一笔）",""))))',
+        f'IF(ROUND(N(平台结算单!$T{sr}),2)>0.01,N(平台结算单!$T{sr}),ABS(N(平台结算单!$X{sr})))'))
 for i in range(N_CASH):
     sr = K0 + i
-    known = (f'COUNTIF({PU("C")},资金流水!$G{sr})+COUNTIF({SA("C")},资金流水!$G{sr})'
-             f'+COUNTIF({RB("B")},资金流水!$G{sr})+COUNTIF({DP("C")},资金流水!$G{sr})'
-             f'+COUNTIF({EP("G")},资金流水!$G{sr})')
-    EX_SRC.append(('"资金流水"', f'IF(资金流水!$G{sr}="","(无单号)"&TEXT(N(资金流水!$A{sr}),"0000"),资金流水!$G{sr})',
-        f'资金流水!$B{sr}', f'资金流水!$C{sr}', f'资金流水!$F{sr}',
-        f'IF(LEFT(资金流水!$O{sr},1)="★",资金流水!$O{sr},'
-        f'IF(AND(LEFT(资金流水!$E{sr},4)="内部转账",资金流水!$L{sr}=""),"内部转账没填对方账户",'
-        f'IF(AND(LEFT(资金流水!$E{sr},4)="内部转账",资金流水!$L{sr}<>"",'
-        f'COUNTIFS({ACC_N},资金流水!$L{sr},{ACC_CO},资金流水!$C{sr})=0),'
+    known = (f'COUNTIF({PU("C")},资金流水!$H{sr})+COUNTIF({SA("C")},资金流水!$H{sr})'
+             f'+COUNTIF({RB("B")},资金流水!$H{sr})+COUNTIF({DP("C")},资金流水!$H{sr})'
+             f'+COUNTIF({EP("G")},资金流水!$H{sr})+COUNTIF({TR("C")},资金流水!$H{sr})'
+             f'+COUNTIF({PS("C")},资金流水!$H{sr})')
+    EX_SRC.append(('"资金流水"', f'IF(资金流水!$H{sr}="","(无单号)"&TEXT(N(资金流水!$A{sr}),"0000"),资金流水!$H{sr})',
+        f'资金流水!$B{sr}', f'资金流水!$C{sr}', f'资金流水!$G{sr}',
+        f'IF(LEFT(资金流水!$P{sr},1)="★",资金流水!$P{sr},'
+        f'IF(AND(LEFT(资金流水!$F{sr},4)="内部转账",资金流水!$M{sr}=""),"内部转账没填对方账户",'
+        f'IF(AND(LEFT(资金流水!$F{sr},4)="内部转账",资金流水!$M{sr}<>"",'
+        f'COUNTIFS({ACC_N},资金流水!$M{sr},{ACC_CO},资金流水!$C{sr})=0),'
         f'"内部转账选了别家公司的账户",'
-        f'IF(AND(资金流水!$G{sr}<>"",{known}=0,OR(LEFT(资金流水!$E{sr},4)="付-采购",'
-        f'LEFT(资金流水!$E{sr},4)="付-代发",LEFT(资金流水!$E{sr},4)="付-费用",'
-        f'LEFT(资金流水!$E{sr},4)="收-销售",LEFT(资金流水!$E{sr},4)="收-平台",'
-        f'LEFT(资金流水!$E{sr},4)="收-返利",LEFT(资金流水!$E{sr},4)="收-退货")),'
+        f'IF(AND(资金流水!$H{sr}<>"",{known}=0,OR(LEFT(资金流水!$F{sr},4)="付-采购",'
+        f'LEFT(资金流水!$F{sr},4)="付-代发",LEFT(资金流水!$F{sr},4)="付-费用",'
+        f'LEFT(资金流水!$F{sr},4)="收-销售",LEFT(资金流水!$F{sr},4)="收-平台",'
+        f'LEFT(资金流水!$F{sr},4)="收-返利",LEFT(资金流水!$F{sr},4)="收-退货")),'
         f'"关联单号找不到对应的业务单",'
-        f'IF({NOPARTY(f"资金流水!$F{sr}")},"往来单位没在主档里建过","")))))',
-        f'N(资金流水!$H{sr})+N(资金流水!$I{sr})'))
+        f'IF({NOPARTY(f"资金流水!$G{sr}")},"往来单位没在主档里建过","")))))',
+        f'N(资金流水!$I{sr})+N(资金流水!$J{sr})'))
 for i in range(N_EXP):
     sr = E0 + i
     EX_SRC.append(('"费用及其他"', f'费用及其他!$G{sr}', f'费用及其他!$B{sr}', f'费用及其他!$C{sr}',
         f'费用及其他!$F{sr}',
-        f'IF(LEFT(费用及其他!$M{sr},1)="★","费用项目没配借方科目",'
-        f'IF(N(费用及其他!$P{sr})<-0.01,"费用付超",""))',
-        f'N(费用及其他!$L{sr})'))
+        f'IF(LEFT(费用及其他!$J{sr},1)="★","费用项目没配借方科目",'
+        f'IF(N(费用及其他!$M{sr})<-0.01,"费用付超",""))',
+        f'N(费用及其他!$I{sr})'))
 assert len(EX_SRC) == X_EX1 - X_EX0 + 1, (len(EX_SRC), X_EX1 - X_EX0 + 1)
 for p, (src, num, dt, co, pt, typ, amt) in enumerate(EX_SRC):
     r = X_EX0 + p
@@ -2658,12 +3185,12 @@ for i in range(N_ITEM):
     r = 4 + i
     it = f'商品档案!$A{IR0 + i}'
     put(ws, f'BD{r}', f'=IF({it}="","",{it})', font=F_AUTO, border=None)
-    put(ws, f'BE{r}', f'=IF($BD{r}="","",ROUND(SUMIFS({SA("O")},{SA("H")},$BD{r},{SA("D")},公司条件,'
-                      f'{YMR(SA("AF"))})+SUMIFS({DP("N")},{DP("H")},$BD{r},{DP("D")},公司条件,'
-                      f'{YMR(DP("AC"))}),2))', font=F_AUTO, border=None, fmt=MONEY)
-    put(ws, f'BF{r}', f'=IF($BD{r}="","",ROUND(SUMIFS({SA("U")},{SA("H")},$BD{r},{SA("D")},公司条件,'
-                      f'{YMR(SA("AF"))})+SUMIFS({DP("V")},{DP("H")},$BD{r},{DP("D")},公司条件,'
-                      f'{YMR(DP("AC"))}),2))', font=F_AUTO, border=None, fmt=MONEY)
+    put(ws, f'BE{r}', f'=IF($BD{r}="","",ROUND(SUMIFS({SA("M")},{SA("H")},$BD{r},{SA("D")},公司条件,'
+                      f'{YMR(SA("AC"))})+SUMIFS({DP("L")},{DP("H")},$BD{r},{DP("D")},公司条件,'
+                      f'{YMR(DP("W"))}),2))', font=F_AUTO, border=None, fmt=MONEY)
+    put(ws, f'BF{r}', f'=IF($BD{r}="","",ROUND(SUMIFS({SA("R")},{SA("H")},$BD{r},{SA("D")},公司条件,'
+                      f'{YMR(SA("AC"))})+SUMIFS({DP("P")},{DP("H")},$BD{r},{DP("D")},公司条件,'
+                      f'{YMR(DP("W"))}),2))', font=F_AUTO, border=None, fmt=MONEY)
 ws.sheet_view.showGridLines = False
 print('  ✓ _自动清单（名单 / 配对池 / 核销池 / 异常池）')
 
@@ -2672,7 +3199,7 @@ print('  ✓ _自动清单（名单 / 配对池 / 核销池 / 异常池）')
 # ════════════════════════════════════════════════════════════
 ws = sheet('主页')
 title(ws, '电 商 一 体 化 账 务 模 板', 'H', None)
-put(ws, 'A2', f'={YEAR}&" 年账套　｜　业务登记 → 自动凭证 → 报表，一条线打通，不用再手工录总账"',
+put(ws, 'A2', f'={YEAR}&" 年账套　｜　内帐含税口径　｜　业务登记 → 自动凭证 → 报表，一条线打通，不用再手工录总账"',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells('A2:H2')
 widths(ws, {'A': 4, 'B': 24, 'C': 46, 'D': 4, 'E': 24, 'F': 20, 'G': 20, 'H': 20})
@@ -2681,21 +3208,24 @@ NAV = [
         ('查询设置', '改年度 / 公司 / 月份 —— 所有报表跟着这里走'),
         ('基础资料', '各种下拉选项；加了这里，登记页的下拉就多出来'),
         ('往来单位主档', '★ 一家单位只建一次，同时勾供应商/客户/资方/店铺合作方'),
-        ('商品档案', '商品编码、规格、默认税率'),
-        ('店铺档案', '店铺挂哪家公司、哪个平台'),
+        ('商品档案', '商品编码、规格、目标毛利率'),
+        ('店铺档案', '店铺挂哪家公司、哪个平台、跟谁结算'),
         ('资金账户档案', '银行户 / 平台货款户 / 现金，各挂一个会计科目'),
         ('科目表', '会计科目 + 报表项目（报表靠它取数）'),
         ('资金规则', '资金业务类型 → 对方科目 / 现金流类别'),
         ('期初余额', '★ 一年一个账套，年初数在这里录'),
     ]),
     ('② 天天录', [
-        ('采购登记', '进货。含返利率 → 实际采购成本 = 不含税 − 应收返利'),
-        ('销售登记', '卖货。平台扣费单列，成本按实际采购加权成本结转'),
+        ('采购登记', '进货。实际采购成本 = 含税金额 − 应收返利'),
+        ('销售登记', '卖货。可按单、也可按「店铺＋商品＋月」汇总录一行；成本自动算'),
         ('返利登记', '跟供应商对账确认返利、跟踪到账和发票'),
-        ('一件代发结算', '不进库存的代发订单'),
-        ('资金流水', '所有进出钱。★ 关联单号一定要填对'),
-        ('发票台账', '进项 / 销项票，只管票不生成凭证'),
-        ('费用及其他', '推广、运费、工资、房租、买设备…'),
+        ('一件代发结算', '我的店出单 · 别人帮我发货（不进库存）'),
+        ('受托代发登记', '★ 别人的店出单 · 我发货；含「代收货款」两种资金归属'),
+        ('平台结算单', '★★ 零售不录明细的入口：一个店一期一行，扣费/到账全在这'),
+        ('月末盘点与成本', '★ 成本的兜底出口：填实盘金额，差额自动调成本'),
+        ('资金流水', '所有进出钱。关联单号能填就填，不填也不会错账'),
+        ('发票台账', '只管票收齐没有，不生成凭证'),
+        ('费用及其他', '推广、运费、工资、房租、买设备…（含税金额）'),
         ('手工凭证', '折旧、计提、正式往来抵销这些做不出来的'),
     ]),
     ('③ 看结果', [
@@ -2772,11 +3302,22 @@ title(ws, '使 用 说 明', 'C', None)
 widths(ws, {'A': 4, 'B': 30, 'C': 108})
 DOC = [
     ('H', '一、这套表是怎么转起来的', ''),
-    ('T', '一句话', '采购 / 销售 / 返利 / 代发 / 资金 / 发票 / 费用 七张登记表 → 《自动凭证》按固定规则展开成分录 '
-          '→ 加上《手工凭证》→ 《科目余额表》→ 利润表 / 资产负债表 / 现金流简表。'
-          '你只录业务，不用再录一遍总账。'),
+    ('T', '一句话', '采购 / 销售 / 返利 / 一件代发 / 受托代发 / 平台结算单 / 月末盘点 / 资金 / 发票 / 费用 '
+          '十张登记表 → 《自动凭证》按固定规则展开成分录 → 加上《手工凭证》→ 《科目余额表》'
+          '→ 利润表 / 资产负债表 / 现金流简表。你只录业务，不用再录一遍总账。'),
+    ('T', '★ 全表含税口径（内帐）', '进货、销售、返利、收入、成本、费用，一律按**实付实收的含税金额**记账，'
+          '不拆不含税和税额，整套表里没有进项税/销项税这两个科目。'
+          '实际缴出去的税（增值税、附加、所得税）在《资金流水》选「付-税费-xx」，直接进费用。'
+          '《发票台账》还在，但它只管「票收齐了没有」，一分钱都不进账。'),
+    ('T', '★ 量大的零售怎么办（三条路，按量选）',
+          '① 单量小、要按单跟账 → 《销售登记》一单一行；'
+          '② 单量中等 → 《销售登记》按「店铺＋商品＋月」汇总录一行，「订单笔数」那列填这个月多少笔；'
+          '③ 单量几万几十万笔 → **明细一行都不录**，只在《平台结算单》按「店铺＋结算期」录一行，'
+          '把收入认定选成「结算单认收入」，收入/退款/佣金/推广/其他扣费一次搞定，'
+          '成本由《月末盘点与成本》整月倒轧。这三条可以混着用，不同的店走不同的路。'),
     ('T', '什么要手工做', '只有四类：折旧摊销、税费计提、正式往来抵销、期末调整（存货报废、重分类等）。'
-          '这些在《手工凭证》里做，其余一律别手工记 —— 记了就是重复。'),
+          '这些在《手工凭证》里做，其余一律别手工记 —— 记了就是重复。'
+          '★ 存货盘盈盘亏不用手工做，填《月末盘点与成本》的实盘金额就自动出凭证。'),
     ('T', '颜色约定', '浅黄＝手工填；浅灰＝公式自动算的，别往里面打字；浅绿＝合计或关键结果；浅红＝预警。'),
     ('H', '二、同一家单位既是供应商又是客户怎么办', ''),
     ('T', '一家只建一次', '《往来单位主档》里一家公司只建一个编码，右边四个「是否」按实际情况勾。'
@@ -2800,14 +3341,59 @@ DOC = [
           '填 0 ＝ 对完账了、这个月一分返利都没有，系统会把采购时预提的那笔冲掉。两者完全不同，别混。'),
     ('T', '收到返利', '去《资金流水》记「收-返利」，关联单号填返利单号（FLxxxx），'
           '《返利登记》的「已收金额」就自动跟上。'),
-    ('H', '四、销售成本怎么结转', ''),
-    ('T', '不是一卖就全转', '单位成本 = 截至这一单当天的加权平均实际采购成本（含期初库存），'
-          '销售成本 = 单位成本 × 本单数量。进了 1000 个只卖 300 个，就只转 300 个的成本。'),
-    ('T', '要手工指定', '《销售登记》里填「手工单位成本」那一列，填了就以它为准。'),
+    ('H', '四、销售成本怎么算（不用手工录单位成本）', ''),
+    ('T', '★ 一个开关管全表', '《查询设置》里的【销售成本怎么算】决定《销售登记》《受托代发登记》'
+          '那一列单位成本怎么来，三选一，全表统一：'),
+    ('T', 'A 月加权平均（默认）', '单位成本 = 截至这一单当天的加权平均实际采购成本（含期初库存），'
+          '销售成本 = 单位成本 × 本单数量。进了 1000 个只卖 300 个，就只转 300 个的成本。'
+          '★ 全自动，一个字都不用填。适合商品数不多、采购登记记得全的。'),
+    ('T', 'B 毛利率倒轧', '单位成本 = 售价 ×（1 − 《商品档案》里那个商品的目标毛利率）。'
+          'ERP 数据不准、只想要个大概数的时候用；月末再靠盘点纠偏。'),
+    ('T', 'C 月末盘点倒轧', '★ 登记页一分成本都不结转，整月成本 = 期初存货 ＋ 本月进货 − 月末实盘。'
+          '每天发货几千单、明细根本没法一笔笔算成本的，就选这个 —— 你只要月底盘一次库存金额。'),
+    ('T', '★ 不管选哪种，盘点都能兜底', '《月末盘点与成本》里只要填了实盘金额，账面和实盘的差额就自动出一张'
+          '「借 主营业务成本／贷 库存商品」的调整凭证。所以：平时按 A 自动结转、季末盘一次纠偏，'
+          '或者干脆选 C 全靠盘点，账都不会跑偏。实盘金额留空就是这个月不盘，不出凭证。'),
+    ('T', '零售汇总认收入的成本', '走《平台结算单》「结算单认收入」的那些零售，没有销售明细、账面库存不会减，'
+          '成本**必须**靠月末盘点补上（预警 W28 会盯着你，不盘就报警）。'),
     ('T', '取不到成本', '说明这个商品在这家公司名下没进过货、期初也没填 —— 《异常预警中心》W07 会点名。'),
+    ('H', '四之二、帮别人的店铺做一件代发（受托代发）', ''),
+    ('T', '两张表别搞混', '《一件代发结算》＝我的店出单、别人帮我发货（我找代发商）；'
+          '《受托代发登记》＝别人的店出单、我发货（我是代发方）。方向正好相反。'),
+    ('T', '★ 关键是【资金归属】', '《受托代发登记》里每一行都要选一个：'),
+    ('T', '①「款到我司」', '终端买家的钱先进我们的账户（走我们的平台店或收款码）。'
+          '★ 这笔钱大部分不是我们的！所以：《资金流水》记「收-代收货款」把**到账全额**（已扣平台佣金的数）'
+          '整笔挂进「其他应付款—代收货款」；《受托代发登记》再把属于我的那块'
+          '（我的供货额 ＋ 代发服务费）从代收货款转成收入；剩下的「应退委托方」就欠着，'
+          '什么时候结给它就记一笔「付-代发结款」。'
+          '这样利润表里只有我的供货价和服务费，几百万代收款不会虚增成收入。'),
+    ('T', '②「款到委托方」', '买家的钱进委托店铺自己的账户，它按期把我的供货款结给我。'
+          '那就是一笔普通应收账款，代收货款那一套完全不出现；收到钱时记「收-代发服务费」。'),
+    ('T', '平台扣费算谁的', '款到我司时，平台佣金是从代收货款里扣的，实质由委托方承担 —— '
+          '所以它不进我们的损益，只是让「应退委托方」少了一块。表里有一列「预计到账(代收−扣费)」'
+          '给你跟银行流水对。'),
+    ('T', '货还是我们的', '受托代发发出去的是我们自己的库存，所以照样结转成本、照样减库存商品。'),
+    ('T', '欠委托方的钱在哪看', '《综合往来对账》新增了「代收货款余额(欠委托方)」这一列，'
+          '《老板经营看板》也单列了一行；预警 W24 会提醒哪些代收的钱还没结出去。'),
+    ('T', '要抵销也可以', '委托方欠我供货款、我又欠它代收货款，签了协议就在《手工凭证》做：'
+          '借 其他应付款—代收货款／贷 应收账款，用途选「往来抵销」，两边都填代发单号，双边自动认。'),
+    ('H', '四之三、平台批量结算（拼多多/抖音/淘宝）', ''),
+    ('T', '为什么要这张表', '平台不是一单一单打钱，是按期整笔结算，中间还扣了佣金、推广、运费。'
+          '零售条目几万几十万，既不可能一笔笔录，也不可能给每笔都填关联单号。'
+          '《平台结算单》就是为此而生：一个店一期录一行。'),
+    ('T', '【收入认定】选哪个', '「结算单认收入」＝零售明细完全不录，收入直接由这张结算单产生'
+          '（借 应收账款＋销售费用／贷 主营业务收入）；'
+          '「销售登记认收入」＝收入和扣费已经在《销售登记》记过了，这张结算单**不生成任何凭证**，'
+          '只当对账工具：右边自动把销售登记同店同期的金额拉过来比一比，差 1 块钱以上就亮红（预警 W26）。'),
+    ('T', '★ 关联单号不用愁', '平台把钱打过来时，《资金流水》记一笔「收-平台结算」，关联单号填结算单号 —— '
+          '一个月一个店就这一笔，填一个单号完全现实。'
+          '★ 另外：关联单号本来就**可以不填**，不填的话钱照样按业务类型进对应科目、'
+          '《综合往来对账》按往来单位汇总照样准，只是单据级的核销跟不了而已。'),
+    ('T', '★ 推广费别记两遍', '平台账单里**直接扣掉**的推广费，只填在结算单的「推广/流量费」列；'
+          '单独打款买的推广才进《费用及其他》。两边都记会让销售费用翻倍，预警 W29 专门抓这个。'),
     ('H', '五、平台扣费和平台提现', ''),
     ('T', '平台扣费', '佣金/技术服务费是平台从货款里直接扣的，所以一边进「销售费用」、一边冲「应收账款」。'
-          '「未回款 = 含税金额 − 平台扣费 − 已回/已结」，平台打过来的净额正好对得上。'),
+          '「未回款 = 销售金额 − 平台扣费 − 已回/已结」，平台打过来的净额正好对得上。'),
     ('T', '平台提现', '平台货款户和银行户都是我们自己的账户，提现只是左口袋到右口袋。'
           '在《资金流水》记两行：平台户「内部转账-转出」＋银行户「内部转账-转入」，两行都填「对方账户」。'
           '《现金流简表》第四行会显示它们的轧差，正常永远是 0。'),
@@ -2816,16 +3402,23 @@ DOC = [
           '所以在《自动凭证》里只能查到一张，这是对的，不是漏了。'
           '另外：对方账户必须是同一家公司的账户，跨公司调钱要走往来，不能用内部转账（预警 W22 会抓）。'),
     ('H', '六、自动凭证的展开规则（想改口径就照这个改）', ''),
-    ('T', '采购登记（4 行）', '借 库存商品＝实际采购成本；借 应交税费—进项税额＝税额；'
-          '借 其他应收款—应收返利＝应收返利；贷 应付账款＝含税金额。'),
-    ('T', '销售登记（7 行）', '借 应收账款＝含税金额；贷 主营业务收入＝不含税；贷 销项税额；'
+    ('T', '采购登记（3 行）', '借 库存商品＝实际采购成本（含税金额 − 应收返利）；'
+          '借 其他应收款—应收返利＝应收返利；贷 应付账款＝采购金额(含税)。'),
+    ('T', '销售登记（6 行）', '借 应收账款／贷 主营业务收入＝销售金额(含税)；'
           '借 主营业务成本／贷 库存商品＝销售成本；借 销售费用／贷 应收账款＝平台扣费。'),
     ('T', '返利登记（2 行）', '只对「差异调整」做：差额为正 → 借 其他应收款—应收返利／贷 主营业务成本；为负则反过来。'),
-    ('T', '一件代发（8 行）', '销售那三行同上；成本这边 借 主营业务成本＋借 进项税／贷 应付账款；'
+    ('T', '一件代发（6 行）', '借 应收账款／贷 主营业务收入＝销售金额；借 主营业务成本／贷 应付账款＝代发成本；'
           '另加平台扣费两行。★ 不碰库存商品。'),
+    ('T', '受托代发（5 行）', '款到我司 → 借 其他应付款—代收货款；款到委托方 → 借 应收账款；'
+          '两者都 贷 主营业务收入＝我的供货额＋服务费；再 借 主营业务成本／贷 库存商品＝我的成本。'),
+    ('T', '平台结算单（3 行）', '★ 只有「结算单认收入」的行才做账：借 应收账款＝应结净额；'
+          '借 销售费用＝扣费合计；贷 主营业务收入＝销售货款 − 退款退货。'
+          '「销售登记认收入」的行一张凭证都不出，纯对账用。'),
+    ('T', '月末盘点（2 行）', '实盘金额填了才出：账面比实盘多 → 借 主营业务成本／贷 库存商品；少则反过来。'
+          '留空不出凭证。'),
     ('T', '资金流水（2 行）', '收钱：借 账户科目／贷 对方科目；付钱反过来。'
           '对方科目按《资金规则》判，内部转账按「对方账户」判，填了「科目手工覆盖」就以它为准。'),
-    ('T', '费用及其他（3 行）', '借 对应科目＝不含税；借 进项税＝税额；贷 应付账款＝价税合计。'
+    ('T', '费用及其他（2 行）', '借 借方科目＝金额(含税)；贷 贷方科目(挂账)＝同额。'
           '付款时在《资金流水》记「付-费用」并填费用单号，应付就冲掉了。'),
     ('T', '金额是 0 的行', '自动隐去，所以《自动凭证》上看到的都是真有内容的分录。'),
     ('H', '七、一年一个账套 / 换年度', ''),
@@ -2836,10 +3429,13 @@ DOC = [
     ('T', '为什么明细小区也要填', '《综合往来对账》的年初往来、《商品库存与成本》的年初库存、'
           '《现金流简表》的期初现金，都是从那三个小区取的。不填的话本年发生额对，但余额从 0 起算。'),
     ('H', '八、每月的固定动作', ''),
-    ('T', '月中', '有业务就记：进货记采购、卖货记销售、收付钱记资金流水、收到票记发票台账。'),
-    ('T', '月末', '① 跟供应商对返利 → 《返利登记》；② 计提折旧、税费 → 《手工凭证》；'
-          '③ 看《异常预警中心》把红的处理掉；④ 看《报表勾稽检查》全 ✔；'
-          '⑤ 《查询设置》选上这个月，把《老板经营看板》发出去。'),
+    ('T', '月中', '有业务就记：进货记采购、卖货记销售（按单或按月汇总）、'
+          '帮别人代发记受托代发、收付钱记资金流水、收到票记发票台账。'),
+    ('T', '月末', '① 平台账单下来 → 录《平台结算单》，对不上的去查；'
+          '② 盘一次库存 → 《月末盘点与成本》填实盘金额，成本自动轧平；'
+          '③ 跟供应商对返利 → 《返利登记》；④ 计提折旧、税费 → 《手工凭证》；'
+          '⑤ 看《异常预警中心》把红的处理掉；⑥ 看《报表勾稽检查》全 ✔；'
+          '⑦ 《查询设置》选上这个月，把《老板经营看板》发出去。'),
     ('H', '九、几个最容易踩的坑（都有预警盯着）', ''),
     ('T', '金额被粘成文本', '★ 从别的表复制粘贴最容易出。文本金额参与不了计算，那一单**凭证直接不生成**，'
           '而报表照样是平的，肉眼完全看不出来。预警 W21 专门抓这个；'
@@ -2885,7 +3481,8 @@ page(ws, titles=None, landscape=False)
 # ════════════════════════════════════════════════════════════
 ORDER = ['主页', '使用说明', '查询设置', '基础资料', '往来单位主档', '商品档案', '店铺档案',
          '资金账户档案', '科目表', '资金规则', '期初余额',
-         '采购登记', '销售登记', '返利登记', '一件代发结算', '资金流水', '发票台账',
+         '采购登记', '销售登记', '返利登记', '一件代发结算', '受托代发登记',
+         '平台结算单', '月末盘点与成本', '资金流水', '发票台账',
          '费用及其他', '手工凭证',
          '自动凭证', '科目余额表', '利润表', '资产负债表', '现金流简表',
          '综合往来对账', '收付款核销中心', '店铺利润分析', '商品库存与成本',
@@ -2897,6 +3494,7 @@ TAB = {'主页': '1F3864', '使用说明': '1F3864',
        '店铺档案': '2E75B6', '资金账户档案': '2E75B6', '科目表': '2E75B6', '资金规则': '2E75B6',
        '期初余额': '2E75B6',
        '采购登记': 'ED7D31', '销售登记': 'ED7D31', '返利登记': 'ED7D31', '一件代发结算': 'ED7D31',
+       '受托代发登记': 'ED7D31', '平台结算单': 'ED7D31', '月末盘点与成本': 'ED7D31',
        '资金流水': 'ED7D31', '发票台账': 'ED7D31', '费用及其他': 'ED7D31', '手工凭证': 'ED7D31',
        '自动凭证': '7F7F7F', '科目余额表': '70AD47', '利润表': '70AD47', '资产负债表': '70AD47',
        '现金流简表': '70AD47',
