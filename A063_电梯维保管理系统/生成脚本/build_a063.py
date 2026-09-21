@@ -73,7 +73,12 @@ L0, L1 = D0, D0 + N_LIFT - 1        # 电梯资料
 K0, K1 = D0, D0 + N_CON - 1         # 维保合同 / 应收对账
 A0, A1 = D0, D0 + N_AR - 1          # 应收登记
 R0, R1 = D0, D0 + N_RC - 1          # 收款登记
+BH = 6                              # 基础资料的表头行（上面 3~5 行放参数）
+B0 = BH + 1                         # 基础资料清单首行
 BE = B0 + N_LIST - 1                # 基础资料清单末行
+T0, T1 = D0, D0 + N_CON - 1         # 分期收款计划 · 按合同汇总
+X0 = T1 + 4                         # 分期收款计划 · 分期明细首行
+X1 = X0 + N_CON * MAX_TERM - 1
 
 # ══════════════════════════════════════════════════════════════
 # ① 基础资料
@@ -82,54 +87,71 @@ ws = sheet('基础资料')
 title(ws, '基 础 资 料 · 清单和参数都在这里维护', 'S',
       '★ 淡黄＝要你填，浅灰＝公式自动算。这一页改了，后面所有表的下拉和提醒跟着变。\n'
       '★ 「费用类别」右边那列「款别」决定这笔钱算合同款还是合同外款；'
-      '「票据类型」右边那列「收款归类」决定收款算发票、收据还是现金无票 —— 这两列别乱改。',
+      '「票据类型」右边那列「收款归类」决定收款算发票、收据还是现金无票；'
+      '「收费周期」右边那列「每年期数」决定分期付款一年分几期收 —— 这三列别乱改。',
       color=C_BASE)
-PARAMS = [('A3', '管理年度', 'B3', YEAR, 'C3', '报表按这个年度算「本年」，上年欠款自动结转成期初。换年只改这一格。'),
-          ('F3', '合同到期提前提醒(天)', 'G3', 60, 'H3', '合同止期在这个天数内就进提醒。'),
-          ('J3', '年检/校验提前提醒(天)', 'K3', 30, 'L3', '年检、限速器、载重试验到期前多少天提醒。'),
-          ('N3', '欠款账龄预警(天)', 'O3', 90, 'P3', '最早一笔没收清的应收拖过这个天数就报警。')]
-for la, lt, va, vv, na, nt in PARAMS:
-    put(ws, la, lt, font=F_TOT, fill=FILL_SEC, align=CR)
-    put(ws, va, vv, font=F_IN, fill=FILL_IN, fmt='0')
-    put(ws, na, nt, font=F_NOTE, align=CL_, border=None)
-ws.row_dimensions[3].height = 26
+PARAMS = [
+    (3, 'A', 'C', 'D', 'E', 'F', 'K', '管理年度', YEAR,
+     '报表按这个年度算「本年」，上年欠款自动结转成本年期初。过年只改这一格，流水一行都不用搬。'),
+    (3, 'L', 'N', 'O', 'P', 'Q', 'S', '合同到期提前提醒(天)', 60, '合同止期在这个天数内就进提醒。'),
+    (4, 'A', 'C', 'D', 'E', 'F', 'K', '年检 / 校验提前提醒(天)', 30,
+     '年检、限速器校验、载重试验到期前多少天开始提醒。'),
+    (4, 'L', 'N', 'O', 'P', 'Q', 'S', '欠款账龄预警(天)', 90, '最早一笔没收清的应收拖过这个天数就报警。'),
+    (5, 'A', 'C', 'D', 'E', 'F', 'S', '分期应收款日 ＝ 期初后(天)', 0,
+     '★ 分期付款用：合同约定「每期期初付」就填 0，「期初后 15 天内付清」就填 15，'
+     '「期末付」就填每期天数。《分期收款计划》按这个算逾期。'),
+]
+for rr, l0, l1, v0, v1, n0, n1, lt, vv, nt in PARAMS:
+    put(ws, f'{l0}{rr}', lt, font=F_TOT, fill=FILL_SEC, align=CR)
+    for cc in range(ord(l0), ord(l1) + 1):
+        put(ws, f'{chr(cc)}{rr}', None, font=F_TOT, fill=FILL_SEC)
+    ws.merge_cells(f'{l0}{rr}:{l1}{rr}')
+    put(ws, f'{l0}{rr}', lt, font=F_TOT, fill=FILL_SEC, align=CR)
+    put(ws, f'{v0}{rr}', vv, font=F_BIG, fill=FILL_IN, fmt='0')
+    for cc in range(ord(v0), ord(v1) + 1):
+        put(ws, f'{chr(cc)}{rr}', None, font=F_BIG, fill=FILL_IN)
+    ws.merge_cells(f'{v0}{rr}:{v1}{rr}')
+    put(ws, f'{v0}{rr}', vv, font=F_BIG, fill=FILL_IN, fmt='0')
+    put(ws, f'{n0}{rr}', nt, font=F_NOTE, align=CL_, border=None)
+    ws.merge_cells(f'{n0}{rr}:{n1}{rr}')
+    ws.row_dimensions[rr].height = 24
 
 LISTS = [('A', '片区 / 站点', AREAS), ('C', '梯型', LIFT_TYPES), ('E', '维保性质', MAINT_KIND),
-         ('G', '维保状态', MAINT_STATE), ('I', '合同状态', CON_STATE), ('K', '收费周期', PAY_CYCLE)]
+         ('G', '维保状态', MAINT_STATE), ('I', '合同状态', CON_STATE)]
 for col, hdr_, vals in LISTS:
-    put(ws, f'{col}{HDR}', hdr_, font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
+    put(ws, f'{col}{BH}', hdr_, font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
     for i in range(N_LIST):
         put(ws, f'{col}{B0+i}', vals[i] if i < len(vals) else None, font=F_IN, fill=FILL_IN, align=CL_)
-put(ws, f'M{HDR}', '费用类别', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
-put(ws, f'N{HDR}', '款别 ★', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
-for i in range(N_LIST):
-    a, b = FEE_ITEMS[i] if i < len(FEE_ITEMS) else (None, None)
-    put(ws, f'M{B0+i}', a, font=F_IN, fill=FILL_IN, align=CL_)
-    put(ws, f'N{B0+i}', b, font=F_IN, fill=FILL_IN)
-put(ws, f'P{HDR}', '票据类型', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
-put(ws, f'Q{HDR}', '收款归类 ★', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
-for i in range(N_LIST):
-    a, b = BILL_TYPES[i] if i < len(BILL_TYPES) else (None, None)
-    put(ws, f'P{B0+i}', a, font=F_IN, fill=FILL_IN, align=CL_)
-    put(ws, f'Q{B0+i}', b, font=F_IN, fill=FILL_IN)
-put(ws, f'S{HDR}', '收款方式', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
+PAIRS = [('K', '收费周期', 'L', '每年期数 ★', PAY_CYCLE),
+         ('M', '费用类别', 'N', '款别 ★', FEE_ITEMS),
+         ('P', '票据类型', 'Q', '收款归类 ★', BILL_TYPES)]
+for c1, h1, c2, h2, data in PAIRS:
+    put(ws, f'{c1}{BH}', h1, font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
+    put(ws, f'{c2}{BH}', h2, font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
+    for i in range(N_LIST):
+        a, b = data[i] if i < len(data) else (None, None)
+        put(ws, f'{c1}{B0+i}', a, font=F_IN, fill=FILL_IN, align=CL_)
+        put(ws, f'{c2}{B0+i}', b, font=F_IN, fill=FILL_IN, fmt='0' if c2 == 'L' else None)
+put(ws, f'S{BH}', '收款方式', font=F_HDR, fill=PatternFill('solid', fgColor=C_BASE))
 for i in range(N_LIST):
     put(ws, f'S{B0+i}', PAY_WAYS[i] if i < len(PAY_WAYS) else None, font=F_IN, fill=FILL_IN, align=CL_)
+ws.row_dimensions[BH].height = 30
 
 widths(ws, {'A': 16, 'B': 2, 'C': 14, 'D': 2, 'E': 12, 'F': 20, 'G': 14, 'H': 8, 'I': 14,
-            'J': 20, 'K': 14, 'L': 8, 'M': 20, 'N': 13, 'O': 8, 'P': 18, 'Q': 13, 'R': 2, 'S': 14})
+            'J': 20, 'K': 14, 'L': 11, 'M': 20, 'N': 13, 'O': 8, 'P': 18, 'Q': 13, 'R': 2, 'S': 14})
 dv(ws, f'N{B0}:N{BE}', '"' + ','.join(['合同款', '合同外款']) + '"', block=True)
 dv(ws, f'Q{B0}:Q{BE}', '"' + ','.join(['发票', '收据', '现金无票']) + '"', block=True)
-ws.freeze_panes = 'A5'
+ws.freeze_panes = f'A{B0}'
 page(ws)
 
-name('管理年度', '基础资料!$B$3')
-name('合同提醒天', '基础资料!$G$3')
-name('年检提醒天', '基础资料!$K$3')
-name('账龄预警天', '基础资料!$O$3')
+name('管理年度', '基础资料!$D$3')
+name('合同提醒天', '基础资料!$O$3')
+name('年检提醒天', '基础资料!$D$4')
+name('账龄预警天', '基础资料!$O$4')
+name('账期天数', '基础资料!$D$5')
 for nm, col in [('片区表', 'A'), ('梯型表', 'C'), ('维保性质表', 'E'), ('维保状态表', 'G'),
-                ('合同状态表', 'I'), ('收费周期表', 'K'), ('费用类别表', 'M'), ('费用款别', 'N'),
-                ('票据类型表', 'P'), ('票据归类表', 'Q'), ('收款方式表', 'S')]:
+                ('合同状态表', 'I'), ('收费周期表', 'K'), ('每年期数表', 'L'), ('费用类别表', 'M'),
+                ('费用款别', 'N'), ('票据类型表', 'P'), ('票据归类表', 'Q'), ('收款方式表', 'S')]:
     name(nm, f'基础资料!${col}${B0}:${col}${BE}')
 print('  ✓ 基础资料')
 
@@ -185,7 +207,7 @@ for r in range(L0, L1 + 1):
                       f'IF(AND(OR($Y{r}="安装免保",$Y{r}="技术免保",$Y{r}="质保期内"),$Z{r}=""),"★免保到期日没填",'
                       f'IF(COUNTIF(合同键,$E{r})=0,"★还没建合同行","OK")))))', font=F_AUTO, fill=FILL_AUTO)
 
-for i, L in enumerate(LIFTS):
+for i, L in enumerate(ALL_LIFTS):
     r, x = L0 + i, LIFT_EXTRA[i]
     unit, proj, model, regno, resq, maker, kind, ce, zhan, men, load, spd, tai, devno, useno = L
     area, man, mk, mstate, freeend, made, chk1, chk2, chk3, memo = x
@@ -284,9 +306,26 @@ for i, K in enumerate(CONTRACTS):
     ws[f'H{r}'], ws[f'I{r}'], ws[f'J{r}'], ws[f'L{r}'] = d0, d1, tai, fee
     ws[f'M{r}'], ws[f'N{r}'], ws[f'W{r}'] = cyc, kind, memo
 
+# 分期付款的几个底数（隐藏辅助列，《分期收款计划》直接读这几列）
+for r in range(K0, K1 + 1):
+    put(ws, f'Y{r}', f'=IF($C{r}="",0,IFERROR(INDEX(每年期数表,MATCH($M{r},收费周期表,0)),0))',
+        font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'Z{r}', f'=IF(OR($C{r}="",$H{r}="",$I{r}=""),0,MAX(1,ROUND(($I{r}+1-$H{r})/30.4375,0)))',
+        font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'AA{r}', f'=IF($C{r}="",0,ROUND(N($L{r})*$Z{r}/12,2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'AB{r}', f'=IF(N($Y{r})<=0,0,IF($Y{r}=1,1,MIN({MAX_TERM},MAX(1,ROUND($Z{r}*$Y{r}/12,0)))))',
+        font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'AC{r}', f'=IF(N($AB{r})=0,0,ROUND($AA{r}/$AB{r},2))', font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
+for _c in ['Y', 'Z', 'AA', 'AB', 'AC']:
+    ws.column_dimensions[_c].hidden = True
+for _c, _h in [('Y', '每年期数'), ('Z', '合同月数'), ('AA', '合同总额'),
+               ('AB', '分期期数'), ('AC', '每期金额')]:
+    put(ws, f'{_c}{HDR}', _h, font=F_HDR, fill=PatternFill('solid', fgColor=C_MAIN))
+
 widths(ws, {'A': 5, 'B': 13, 'C': 30, 'D': 18, 'E': 34, 'F': 14, 'G': 11, 'H': 12, 'I': 12,
             'J': 9, 'K': 10, 'L': 12, 'M': 11, 'N': 10, 'O': 11, 'P': 11, 'Q': 15, 'R': 20,
-            'S': 18, 'T': 13, 'U': 13, 'V': 14, 'W': 26, 'X': 22})
+            'S': 18, 'T': 13, 'U': 13, 'V': 14, 'W': 26, 'X': 22, 'Y': 10, 'Z': 10,
+            'AA': 13, 'AB': 10, 'AC': 12})
 dv(ws, f'G{K0}:G{K1}', dynlist('基础资料', 'I', B0, BE),
    msg='合同还没回来就选「已签未回 / 未签 / 续签中」，照样能挂应收。', block=True)
 dv(ws, f'M{K0}:M{K1}', dynlist('基础资料', 'K', B0, BE), block=True)
@@ -319,7 +358,7 @@ ws = sheet('应收登记')
 HD_A = ['序号', '应收单号(自动)', '登记日期 ★', '客户项目 ★', '使用单位(自动)', '项目名称(自动)',
         '费用类别 ★', '款别(自动)', '计费期间起', '计费期间止', '应收金额(含税) ★', '开票日期',
         '发票号', '开票金额', '开票状态', '已收(自动核销)', '未收余额', '年度(自动)', '备注', '核对',
-        '开票年度', '指定冲销额', '净应收', '同项目累计净应收', '行号']
+        '开票年度', '指定冲销额', '净应收', '同项目累计净应收', '行号', '归期日']
 title(ws, '应 收 登 记 · 该收人家多少钱，一笔一行', 'T',
       '★ 合同款、合同外款都记在这一张表里：G 列选「费用类别」，H 列会自动判成「合同款」还是「合同外款」，'
       '不用分两张表记，最后在《应收对账》里自动拆开给你看。\n'
@@ -377,6 +416,7 @@ for r in range(A0, A1 + 1):
     put(ws, f'X{r}', f'=IF($C{r}="","",ROUND(SUMIFS(应收净额,应收键,$D{r},应收行号,"<="&ROW()),2))',
         font=F_AUTO, fill=FILL_AUTO, fmt=MONEY)
     put(ws, f'Y{r}', f'=IF($C{r}="","",ROW())', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    put(ws, f'Z{r}', f'=IF($C{r}="","",IF($I{r}<>"",$I{r},$C{r}))', font=F_AUTO, fill=FILL_AUTO, fmt=DATEQ)
 
 for i, A in enumerate(AR_ROWS):
     r = A0 + i
@@ -389,8 +429,8 @@ for i, A in enumerate(AR_ROWS):
 
 widths(ws, {'A': 5, 'B': 16, 'C': 12, 'D': 34, 'E': 28, 'F': 17, 'G': 15, 'H': 10, 'I': 12, 'J': 12,
             'K': 13, 'L': 12, 'M': 12, 'N': 12, 'O': 12, 'P': 13, 'Q': 13, 'R': 8, 'S': 26, 'T': 24,
-            'U': 10, 'V': 12, 'W': 12, 'X': 16, 'Y': 8})
-for c in 'UVWXY':
+            'U': 10, 'V': 12, 'W': 12, 'X': 16, 'Y': 8, 'Z': 12})
+for c in 'UVWXYZ':
     ws.column_dimensions[c].hidden = True
 dv(ws, f'D{A0}:D{A1}', dynlist_f('维保合同', 'E', K0, K1),
    msg='从《维保合同》建过的「客户项目」里选。没有就先去《维保合同》补一行，合同状态选「未签」也行。')
@@ -412,6 +452,8 @@ name('应收年度', f'应收登记!$R${A0}:$R${A1}')
 name('应收开票年度', f'应收登记!$U${A0}:$U${A1}')
 name('应收净额', f'应收登记!$W${A0}:$W${A1}')
 name('应收行号', f'应收登记!$Y${A0}:$Y${A1}')
+name('应收归期日', f'应收登记!$Z${A0}:$Z${A1}')
+name('应收已收', f'应收登记!$P${A0}:$P${A1}')
 print('  ✓ 应收登记')
 
 # ══════════════════════════════════════════════════════════════
@@ -515,7 +557,7 @@ HD_D = ['序号', '使用单位', '项目名称', '合同编号', '合同状态'
 title(ws, '应 收 对 账 · 每个项目到底还欠多少，看这一张', 'X',
       '★ 这一张全是公式，不用填，只有 W 列备注可以写。行跟《维保合同》一一对应。\n'
       '★ 跨年就靠 H 列：上年及以前「应收 − 收款」的差额自动变成本年期初，所以 26 年的欠款会自己接到 27 年去；'
-      '过年只要把《基础资料》B3 的「管理年度」改成 2027，整张表就是 27 年的口径了，流水一行都不用搬。\n'
+      '过年只要把《基础资料》D3 的「管理年度」改成 2027，整张表就是 27 年的口径了，流水一行都不用搬。\n'
       '★ 欠款拆两半：R「已开票应收」＝票开了钱没到；S「未开票应收」＝票还没开的那部分。R＋S＝T 欠款余额。\n'
       '★ N 列本年已收再按票据拆成 O 发票 / P 收据 / Q 现金无票 三路，跟实际收款方式对得上。',
       color=C_RPT)
@@ -596,6 +638,134 @@ name('对账欠款', f'应收对账!$T${K0}:$T${K1}')
 print('  ✓ 应收对账')
 
 # ══════════════════════════════════════════════════════════════
+# ⑦ 分期收款计划（大合同按季 / 半月 / 半年付款，每期该回多少、回了没有）
+# ══════════════════════════════════════════════════════════════
+ws = sheet('分期收款计划')
+title(ws, '分 期 收 款 计 划 · 按季 / 半月 / 半年付款的合同，每期该回多少、回了没有', 'V',
+      '★ 全自动，不用填。排期是按《维保合同》的「合同起止 ＋ 收费周期 ＋ 合同年费」算出来的：\n'
+      '　　合同总额 ＝ 年费 × 合同月数 ÷ 12；每期金额 ＝ 合同总额 ÷ 期数（尾差进最后一期）。\n'
+      '★ 一年几期看《基础资料》的「每年期数」：一次性 1 期、半年一次 2 期、季度一次 4 期、月度 12 期、半月一次 24 期、按次不排期。\n'
+      '★ 「应收款日」＝ 每期期初 ＋《基础资料》D5 的账期天数。过了这个日子还没收够，就算逾期。\n'
+      '★ 「累计已回款」用的是核销口径（该期挂的合同款应收实际收到多少），不是简单按收款日期切，'
+      '所以客户一笔钱把几期一起付了也算得准。\n'
+      '★ 这里的「回款缺口」只算合同款里已经到期的那几期，跟《应收对账》的「欠款余额」不是一回事 ——'
+      '后者还包含合同外的维修费配件费，以及还没到期但已经挂账开票的钱。两个数各看各的，不用对平。',
+      color=C_DASH)
+
+# ── 块① 按合同看回款进度 ──
+HD_T = ['序号', '使用单位', '项目名称', '合同编号', '合同状态', '收费周期', '合同起', '合同止',
+        '合同年费', '合同总额', '分期期数', '每期金额', '已到期期数', '累计计划回款',
+        '累计已挂应收', '累计已回款', '回款缺口', '回款进度', '下一期应收款日', '下一期金额',
+        '回款状态', '核对']
+headers(ws, HDR, HD_T, fill_color=C_DASH, height=30)
+for i in range(N_CON):
+    r, cr = T0 + i, K0 + i
+    ds, de = X0 + i * MAX_TERM, X0 + i * MAX_TERM + MAX_TERM - 1
+    put(ws, f'A{r}', f'=IF(维保合同!$C{cr}="","",ROW()-{HDR})', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+    for c, sc in [('B', 'C'), ('C', 'D'), ('E', 'G'), ('F', 'M')]:
+        put(ws, f'{c}{r}', f'=IF($A{r}="","",维保合同!${sc}{cr})', font=F_IN, fill=FILL_AUTO,
+            align=CL_ if c in ('B', 'C') else C)
+    put(ws, f'D{r}', f'=IF($A{r}="","",维保合同!$F{cr}&"")', font=F_IN, fill=FILL_AUTO)
+    put(ws, f'G{r}', f'=IF($A{r}="","",维保合同!$H{cr})', font=F_IN, fill=FILL_AUTO, fmt=DATEQ)
+    put(ws, f'H{r}', f'=IF($A{r}="","",维保合同!$I{cr})', font=F_IN, fill=FILL_AUTO, fmt=DATEQ)
+    put(ws, f'I{r}', f'=IF($A{r}="","",维保合同!$L{cr})', font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'J{r}', f'=IF($A{r}="","",维保合同!$AA{cr})', font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'K{r}', f'=IF($A{r}="","",维保合同!$AB{cr})', font=F_IN, fill=FILL_AUTO, fmt=NUM)
+    put(ws, f'L{r}', f'=IF($A{r}="","",维保合同!$AC{cr})', font=F_TOT, fill=FILL_KPI, fmt=MONEY)
+    put(ws, f'M{r}', f'=IF($A{r}="","",COUNTIF($J${ds}:$J${de},1))', font=F_IN, fill=FILL_AUTO, fmt=NUM)
+    put(ws, f'N{r}', f'=IF($A{r}="","",ROUND(SUMIF($J${ds}:$J${de},1,$G${ds}:$G${de}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'O{r}', f'=IF($A{r}="","",ROUND(SUMIF($J${ds}:$J${de},1,$H${ds}:$H${de}),2))',
+        font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'P{r}', f'=IF($A{r}="","",ROUND(SUMIF($J${ds}:$J${de},1,$I${ds}:$I${de}),2))',
+        font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'Q{r}', f'=IF($A{r}="","",ROUND($N{r}-$P{r},2))', font=F_WARN, fill=FILL_KPI, fmt=MONEY)
+    put(ws, f'R{r}', f'=IF(OR($A{r}="",N($N{r})=0),"",$P{r}/$N{r})', font=F_IN, fill=FILL_AUTO, fmt=PCT)
+    put(ws, f'S{r}', f'=IF($A{r}="","",IFERROR(INDEX($F${ds}:$F${de},MATCH(0,$J${ds}:$J${de},0)),""))',
+        font=F_IN, fill=FILL_AUTO, fmt=DATEQ)
+    put(ws, f'T{r}', f'=IF($A{r}="","",IFERROR(INDEX($G${ds}:$G${de},MATCH(0,$J${ds}:$J${de},0)),""))',
+        font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+    put(ws, f'U{r}', f'=IF($A{r}="","",IF(N($K{r})=0,"按次结算，不排期",'
+                     f'IF($Q{r}<=0.01,"✔ 按期收清",'
+                     f'"▲欠 "&TEXT($Q{r},"#,##0.00")&"（约 "&TEXT(ROUND($Q{r}/MAX($L{r},0.01),1),"0.0")&" 期）")))',
+        font=F_WARN, fill=FILL_WARN, align=CL_)
+    put(ws, f'V{r}', f'=IF($A{r}="","",IF(N($K{r})=0,"不排期",'
+                     f'IF(ROUND(SUM($G${ds}:$G${de})-$J{r},2)<>0,"★各期合计≠合同总额","OK")))',
+        font=F_AUTO, fill=FILL_AUTO)
+put(ws, f'A{HDR-1}', '① 按合同看回款进度（一个合同一行，跟《维保合同》行对行）　合计 →',
+    font=F_SEC, fill=FILL_TOT, align=CL_)
+for _c in 'BCDEFGH':
+    put(ws, f'{_c}{HDR-1}', None, font=F_SEC, fill=FILL_TOT)
+ws.merge_cells(f'A{HDR-1}:H{HDR-1}')
+put(ws, f'A{HDR-1}', '① 按合同看回款进度（一个合同一行，跟《维保合同》行对行）　合计 →',
+    font=F_SEC, fill=FILL_TOT, align=CL_)
+for c in 'IJNOPQ':
+    put(ws, f'{c}{HDR-1}', f'=ROUND(SUM(${c}${T0}:${c}${T1}),2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
+put(ws, f'R{HDR-1}', f'=IFERROR($P${HDR-1}/$N${HDR-1},"")', font=F_TOT, fill=FILL_TOT, fmt=PCT)
+put(ws, f'U{HDR-1}', f'=COUNTIF($U${T0}:$U${T1},"▲*")&" 个合同没按期收齐"', font=F_WARN, fill=FILL_TOT)
+put(ws, f'V{HDR-1}', f'=IF(COUNTIF($V${T0}:$V${T1},"★*")=0,"全部 OK",'
+                     f'COUNTIF($V${T0}:$V${T1},"★*")&" 行要查")', font=F_WARN, fill=FILL_TOT)
+ws.row_dimensions[HDR - 1].height = 20
+
+# ── 块② 分期明细排期 ──
+SEC2, HD2 = X0 - 2, X0 - 1
+put(ws, f'A{SEC2}', f' ② 分期明细排期（一个合同最多排 {MAX_TERM} 期；用表头的筛选按「本期状态」挑出逾期的期）',
+    font=F_SEC, fill=FILL_SEC, align=CL_)
+ws.merge_cells(f'A{SEC2}:O{SEC2}')
+ws.row_dimensions[SEC2].height = 22
+headers(ws, HD2, ['合同序号', '客户项目', '期次', '本期区间起', '本期区间止', '应收款日',
+                  '本期计划金额', '本期已挂应收', '本期已回款', '已到期', '累计计划',
+                  '累计已挂', '累计已回款', '本期状态', '逾期天数'], fill_color=C_DASH, height=30)
+for i in range(N_CON):
+    cr = K0 + i
+    ds = X0 + i * MAX_TERM
+    ED = f'EDATE(维保合同!$H{cr},'
+    for j in range(MAX_TERM):
+        dr, n = ds + j, j + 1
+        hf = f'INT(({n}-1)/2)'
+        put(ws, f'A{dr}', f'=IF($B{dr}="","",{i+1})', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+        put(ws, f'B{dr}', f'=IF(OR(维保合同!$C{cr}="",N(维保合同!$AB{cr})<{n}),"",维保合同!$E{cr})',
+            font=F_AUTO, fill=FILL_AUTO, align=CL_)
+        put(ws, f'C{dr}', f'=IF($B{dr}="","",{n})', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+        put(ws, f'D{dr}', f'=IF($B{dr}="","",IF(维保合同!$Y{cr}={MAX_TERM},'
+                          f'{ED}{hf})+MOD({n}-1,2)*15,{ED}({n}-1)*12/维保合同!$Y{cr})))',
+            font=F_IN, fill=FILL_AUTO, fmt=DATEQ)
+        put(ws, f'E{dr}', f'=IF($B{dr}="","",MIN(维保合同!$I{cr},IF(维保合同!$Y{cr}={MAX_TERM},'
+                          f'IF(MOD({n}-1,2)=0,{ED}{hf})+14,{ED}{hf}+1)-1),'
+                          f'{ED}{n}*12/维保合同!$Y{cr})-1)))', font=F_IN, fill=FILL_AUTO, fmt=DATEQ)
+        put(ws, f'F{dr}', f'=IF($B{dr}="","",$D{dr}+N(账期天数))', font=F_TOT, fill=FILL_AUTO, fmt=DATEQ)
+        put(ws, f'G{dr}', f'=IF($B{dr}="","",IF({n}=维保合同!$AB{cr},'
+                          f'ROUND(维保合同!$AA{cr}-维保合同!$AC{cr}*(维保合同!$AB{cr}-1),2),'
+                          f'维保合同!$AC{cr}))', font=F_TOT, fill=FILL_KPI, fmt=MONEY)
+        put(ws, f'H{dr}', f'=IF($B{dr}="","",ROUND(SUMIFS(应收金额,应收键,$B{dr},应收款别,"合同款",'
+                          f'应收归期日,">="&$D{dr},应收归期日,"<="&$E{dr}),2))',
+            font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+        put(ws, f'I{dr}', f'=IF($B{dr}="","",ROUND(SUMIFS(应收已收,应收键,$B{dr},应收款别,"合同款",'
+                          f'应收归期日,">="&$D{dr},应收归期日,"<="&$E{dr}),2))',
+            font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+        put(ws, f'J{dr}', f'=IF($B{dr}="","",IF($F{dr}<=TODAY(),1,0))', font=F_AUTO, fill=FILL_AUTO, fmt='0')
+        put(ws, f'K{dr}', f'=IF($B{dr}="","",ROUND(SUM($G${ds}:$G{dr}),2))', font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+        put(ws, f'L{dr}', f'=IF($B{dr}="","",ROUND(SUM($H${ds}:$H{dr}),2))', font=F_IN, fill=FILL_AUTO, fmt=MONEY)
+        put(ws, f'M{dr}', f'=IF($B{dr}="","",ROUND(SUM($I${ds}:$I{dr}),2))', font=F_TOT, fill=FILL_AUTO, fmt=MONEY)
+        put(ws, f'N{dr}', f'=IF($B{dr}="","",IF($J{dr}=0,"未到期",'
+                          f'IF($M{dr}>=$K{dr}-0.01,"✔ 已收清",'
+                          f'IF($L{dr}<$K{dr}-0.01,"▲还没挂应收 "&TEXT($K{dr}-$L{dr},"#,##0.00"),'
+                          f'"▲欠 "&TEXT($K{dr}-$M{dr},"#,##0.00")))))',
+            font=F_WARN, fill=FILL_WARN, align=CL_)
+        put(ws, f'O{dr}', f'=IF($B{dr}="","",IF(OR($J{dr}=0,$M{dr}>=$K{dr}-0.01),"",TODAY()-$F{dr}))',
+            font=F_WARN, fill=FILL_AUTO, fmt=DAYS)
+
+# 两块共用同一批列，列宽要同时照顾「块①的合同信息」和「块②的期次信息」
+widths(ws, {'A': 8, 'B': 34, 'C': 18, 'D': 13, 'E': 12, 'F': 13, 'G': 13, 'H': 13, 'I': 13,
+            'J': 13, 'K': 13, 'L': 13, 'M': 13, 'N': 24, 'O': 13, 'P': 13, 'Q': 13, 'R': 11,
+            'S': 14, 'T': 13, 'U': 26, 'V': 20})
+ws.freeze_panes = 'C5'
+ws.auto_filter.ref = f'A{HD2}:O{X1}'
+page(ws, titles=f'{HDR}:{HDR}')
+PLAN_TOT, PLAN_D0, PLAN_D1 = HDR - 1, X0, X1
+print('  ✓ 分期收款计划')
+
+# ══════════════════════════════════════════════════════════════
 # ⑦ _自动清单（隐藏）—— 提醒表的「压缩」辅助
 # ══════════════════════════════════════════════════════════════
 ws = sheet('_自动清单', hidden=True)
@@ -642,7 +812,7 @@ N_B1, N_B2, N_B3, N_B4 = 60, 80, 50, 60
 ws = sheet('到期与提醒')
 title(ws, '到 期 与 提 醒 · 该催的合同、该约的年检、该转收费的免保、该要的钱', 'L',
       '★ 整张表都是自动生成的，不用填。四块分别是：合同到期/没回签、电梯年检与校验到期、免保快到期该转收费、欠款账龄预警。\n'
-      '★ 「剩余天数」是负的（红字）就是已经过期了。提前多少天开始提醒，在《基础资料》第 3 行三个参数里改。\n'
+      '★ 「剩余天数」是负的（红字）就是已经过期了。提前多少天开始提醒，在《基础资料》第 3~5 行的参数里改。\n'
       '★ 每块最多显示的条数写在小标题上，超了会提示；真要全量看，回各自的明细表用筛选。',
       color=C_WARN)
 
@@ -754,7 +924,7 @@ name('应收开票日', f'应收登记!$L${A0}:$L${A1}')
 # ══════════════════════════════════════════════════════════════
 ws = sheet('月度汇总')
 title(ws, '月 度 汇 总 · 本年度的应收、开票、收款，按月 / 类别 / 片区 / 票据 / 方式 五个口径', 'K',
-      '★ 「本年度」＝《基础资料》B3 的管理年度。改那一格，整张表跟着换年。\n'
+      '★ 「本年度」＝《基础资料》D3 的管理年度。改那一格，整张表跟着换年。\n'
       '★ 全是公式，不用填。①按月 ②按费用类别 ③按片区 ④按票据类型 ⑤按收款方式，'
       '②③④⑤ 的行是跟着《基础资料》的清单走的，那边加一行这里就多一行。\n'
       '★ ① 最后一列「累计欠款余额」＝上年结转 ＋ 当年累计应收 － 当年累计收款，跟《应收对账》的欠款合计对得上。',
@@ -977,6 +1147,16 @@ CHECKS = [
     ('电梯台量：《电梯资料》合计 ＝《维保合同》在册台量合计',
      f'电梯资料!$P${H3_}', f'维保合同!$K${H3_}',
      '不等 ＝ 有电梯的「客户项目」在《维保合同》里没有对应行，去《电梯资料》AE 列找「★还没建合同行」。'),
+    ('《分期收款计划》各合同「各期计划金额合计 ＝ 合同总额」',
+     f'COUNTIF(分期收款计划!$V${T0}:$V${T1},"★*")', '0',
+     '★ 分期付款的底线：把一份合同拆成几期，几期加起来必须正好等于合同总额，一分不能多也不能少。'),
+    ('有没有合同的期数排不下（超过 %d 期）' % MAX_TERM,
+     f'SUMPRODUCT((维保合同!$C${K0}:$C${K1}<>"")*'
+     f'(维保合同!$Z${K0}:$Z${K1}*维保合同!$Y${K0}:$Y${K1}/12>{MAX_TERM}))', '0',
+     '比如两年期的半月付合同要 48 期，表里一份合同只排 %d 期。真碰上了就把合同按年拆成两行。' % MAX_TERM),
+    ('《分期收款计划》合同总额合计 ＝《维保合同》按月折算的合同总额合计',
+     f'分期收款计划!$J${HDR-1}', f'ROUND(SUM(维保合同!$AA${K0}:$AA${K1}),2)',
+     '合同总额 ＝ 年费 × 合同月数 ÷ 12，两张表要一致。'),
 ]
 OVER = [('《到期与提醒》① 合同提醒', TOT_C, N_B1),
         ('《到期与提醒》② 年检/校验提醒', TOT_J, N_B2),
@@ -1064,7 +1244,7 @@ def sec(rr, txt, color=C_MAIN):
     ws.row_dimensions[rr].height = 22
 
 
-sec(4, ' ① 本年概览（年度＝《基础资料》B3，改那一格整套表换年）')
+sec(4, ' ① 本年概览（年度＝《基础资料》D3，改那一格整套表换年）')
 card(5, 'A', 'B', '管理年度', '=管理年度&" 年"', fmt=None)
 card(5, 'C', 'D', '在册台量', f'=电梯资料!$P${H3_}', fmt=NUM)
 card(5, 'E', 'F', '在保项目数', f'=COUNTIF(合同键,"?*")', fmt=NUM)
@@ -1078,13 +1258,20 @@ card(11, 'C', 'D', '未开票应收（票还没开）', f'=应收对账!$S${H3_}
 card(11, 'E', 'F', '本年现金/无票收款', f'=应收对账!$Q${H3_}')
 card(11, 'G', 'H', '全表核对', f'=核对表!$F${CK_ROW}', fmt=None)
 
-sec(14, ' ② 提醒速览（详细清单点《到期与提醒》）', C_WARN)
-card(15, 'A', 'B', '合同到期 / 没回签', f'={TOT_C}&" 条"', fmt=None, fill=FILL_WARN, font=F_WARN)
-card(15, 'C', 'D', '年检 / 校验到期', f'={TOT_J}&" 台"', fmt=None, fill=FILL_WARN, font=F_WARN)
-card(15, 'E', 'F', '免保到期该转收费', f'={TOT_M}&" 台"', fmt=None, fill=FILL_WARN, font=F_WARN)
-card(15, 'G', 'H', '还有欠款的项目', f'={TOT_Q}&" 个"', fmt=None, fill=FILL_WARN, font=F_WARN)
+sec(14, ' ② 分期付款回款情况（明细点《分期收款计划》）', C_DASH)
+card(15, 'A', 'B', '截至今天该回款(按分期计划)', f'=分期收款计划!$N${PLAN_TOT}')
+card(15, 'C', 'D', '实际已回款', f'=分期收款计划!$P${PLAN_TOT}')
+card(15, 'E', 'F', '回款缺口', f'=分期收款计划!$Q${PLAN_TOT}', fill=FILL_WARN, font=F_WARN)
+card(15, 'G', 'H', '没按期收齐的合同', f'=COUNTIF(分期收款计划!$U${T0}:$U${T1},"▲*")&" 个"',
+     fmt=None, fill=FILL_WARN, font=F_WARN)
 
-sec(18, ' ③ 各表导航（点表名直接跳过去）')
+sec(18, ' ③ 提醒速览（详细清单点《到期与提醒》）', C_WARN)
+card(19, 'A', 'B', '合同到期 / 没回签', f'={TOT_C}&" 条"', fmt=None, fill=FILL_WARN, font=F_WARN)
+card(19, 'C', 'D', '年检 / 校验到期', f'={TOT_J}&" 台"', fmt=None, fill=FILL_WARN, font=F_WARN)
+card(19, 'E', 'F', '免保到期该转收费', f'={TOT_M}&" 台"', fmt=None, fill=FILL_WARN, font=F_WARN)
+card(19, 'G', 'H', '还有欠款的项目', f'={TOT_Q}&" 个"', fmt=None, fill=FILL_WARN, font=F_WARN)
+
+sec(22, ' ④ 各表导航（点表名直接跳过去）')
 NAV = [('使用说明', '怎么用、怎么跨年、坑在哪，先看这个', '看'),
        ('基础资料', '片区、梯型、维保状态、费用类别、票据类型…所有下拉都在这里改', '填'),
        ('电梯资料', '一台梯子一行：注册代码、年检日期、维保状态、免保到期', '填'),
@@ -1092,10 +1279,11 @@ NAV = [('使用说明', '怎么用、怎么跨年、坑在哪，先看这个', '
        ('应收登记', '该收多少钱，一笔一行（合同款 / 合同外款都在这）', '填'),
        ('收款登记', '钱几时到、开的什么票，一笔一行', '填'),
        ('应收对账', '★ 每个项目欠多少：上年结转 / 本年应收 / 已收 / 已开票应收 / 未开票应收 / 欠款', '看'),
+       ('分期收款计划', '★ 按季 / 半月 / 半年付款的合同，每期该回多少、回了没有、欠几期', '看'),
        ('到期与提醒', '该催的合同、该约的年检、该转收费的免保、该要的钱', '看'),
        ('月度汇总', '按月 / 费用类别 / 片区 / 票据类型 / 收款方式 五个口径', '看'),
        ('核对表', '这份表还平不平，一眼看出来', '看')]
-NV = 19
+NV = 23
 headers(ws, NV, ['表 名', '填/看', '这张表是干什么的', '', '', '', '', ''], height=24)
 ws.merge_cells(f'C{NV}:H{NV}')
 for i, (nm, desc, kind) in enumerate(NAV):
@@ -1131,7 +1319,7 @@ DOC = [
     ('p', '串起这四张表的是一把钥匙：E 列「客户项目」＝ 使用单位 ＋ " ｜ " ＋ 项目名称。同一个单位有几个小区/几栋楼，就按项目分开建行，各算各的账。'),
     ('sec', '二、第一次用，照这个顺序填'),
     ('p', '① 《基础资料》：把片区、梯型、维保性质、维保状态、合同状态、收费周期、费用类别、票据类型、收款方式这几张小清单改成你们自己的说法；'
-          '再把第 3 行四个参数定一下（管理年度、合同提前提醒天数、年检提前提醒天数、欠款账龄预警天数）。'),
+          '再把第 3 行四个参数定一下（管理年度、合同提前提醒天数、年检提前提醒天数、欠款账龄预警天数、分期应收款日账期天数）。'),
     ('p', '② 《电梯资料》：一台梯子一行。使用单位、项目名称必须填（这两列拼出钥匙）；台量一般填 1。'
           '维保状态选了「安装免保 / 技术免保 / 质保期内」的，一定要填「免保到期日」。'),
     ('p', '③ 《维保合同》：一个项目一行。合同没回来也先建行 —— 合同编号先空着，合同状态选「已签未回」或「未签」。'),
@@ -1151,7 +1339,7 @@ DOC = [
     ('p', '如果客户特意交代「这笔是付去年那张维修费的」，就在 L 列把那张应收单号选上 —— 指定的优先冲，剩下的再按先挂先冲走。'),
     ('p', '最后在《应收对账》里，本年应收会自动拆成 J「其中：合同款」和 K「其中：合同外款」两列，合起来一分不差。'),
     ('sec', '五、合同到期提醒'),
-    ('p', '《维保合同》Q 列自动算：合同止期到了没有、还剩几天。提前多少天开始提醒，在《基础资料》G3 改（默认 60 天）。'
+    ('p', '《维保合同》Q 列自动算：合同止期到了没有、还剩几天。提前多少天开始提醒，在《基础资料》O3 改（默认 60 天）。'
           '已经过期的会显示「已到期 XX 天」，红字。'),
     ('p', '《到期与提醒》① 把「快到期」和「没回签」的合同压成一张连续清单，直接照着打电话就行。'),
     ('sec', '六、开票应收、未开票应收、现金收款、最后欠款'),
@@ -1169,7 +1357,7 @@ DOC = [
     ('p', '另外 J 列「收款方式」记的是钱怎么进来的（银行转账 / 现金 / 微信 / 支付宝 / 承兑汇票 / 抵扣冲账），跟开什么票是两回事，别混。'),
     ('sec', '八、26 年的应收款怎么接到 27 年 —— 这表能连续用很多年'),
     ('p', '《应收登记》《收款登记》两张流水不分年度，一直往下记就行，过年不用新建表、不用搬数。'),
-    ('p', '到了 27 年，只做一个动作：把《基础资料》B3 的「管理年度」从 2026 改成 2027。'),
+    ('p', '到了 27 年，只做一个动作：把《基础资料》D3 的「管理年度」从 2026 改成 2027。'),
     ('p', '然后《应收对账》H 列「上年结转欠款」会自动算成「2027 年以前的应收 － 2027 年以前的收款」，'
           '也就是 26 年（以及更早）没收完的钱，自动变成 27 年的期初。I 列本年应收、N 列本年已收自动只看 2027 年的。'
           'T 列欠款余额本来就是全累计，跨几年都准。'),
@@ -1183,14 +1371,45 @@ DOC = [
     ('p', '《维保合同》O 列「免保台量」、P 列「收费台量」会自动按电梯的维保状态算出来，一眼看出这个项目实际该按几台收钱。'),
     ('sec', '十、年检、限速器校验、载重试验提醒'),
     ('p', '《电梯资料》T、U、V 三列填下次到期日。AA 列盯年检，AB 列盯限速器校验和载重试验（取两者里较早的那个）。'
-          '提前多少天提醒在《基础资料》K3 改（默认 30 天）。'),
+          '提前多少天提醒在《基础资料》D4 改（默认 30 天）。'),
     ('p', '《到期与提醒》② 把所有该约检的梯子压成一张清单，「剩余天数」是红色负数就是已经过期了。'),
-    ('sec', '十一、日常动作清单'),
+    ('sec', '十一、金额大的合同分季度 / 半月 / 半年付款，回款怎么算'),
+    ('p', '先在《维保合同》把三样填对：H/I 合同起止、L 合同年费（含税）、M 收费周期。'
+          '收费周期就是「一年分几期收」——《基础资料》K、L 两列定的：一次性 1 期、半年一次 2 期、'
+          '季度一次 4 期、月度 12 期、半月一次 24 期、按次不排期。要加别的周期就在那两列加一行。'),
+    ('p', '填完《分期收款计划》自动排出来，不用手工算：'),
+    ('p', '　　合同总额 ＝ 合同年费 × 合同月数 ÷ 12（所以半年合同、一年半合同都算得对）；'
+          '每期金额 ＝ 合同总额 ÷ 期数，除不尽的尾差进最后一期，几期加起来正好等于合同总额。'),
+    ('p', '　　每期的区间也自动排：季度付就是合同起算起每 3 个月一期，半年付每 6 个月一期，'
+          '半月付就是每月切成 1—15 号、16 号—月底两期。'),
+    ('p', '　　「应收款日」＝ 每期期初 ＋《基础资料》D5 的账期天数。合同写「每期期初付」就填 0，'
+          '写「期初 15 天内付清」就填 15，写「期末付」就填每期的天数。过了这一天还没收够就开始算逾期天数。'),
+    ('p', '这张表分两块看：'),
+    ('p', '　　① 按合同看回款进度 —— 一个合同一行：已到期几期、累计该回多少、实际回了多少、'
+          '差多少（还差约几期）、回款进度百分比、下一期什么时候该收多少。催款、开会汇报看这一块。'),
+    ('p', '　　② 分期明细排期 —— 一个合同一期一行：这一期的区间、该收多少、应收款日、'
+          '有没有挂应收、收到多少、状态、逾期多少天。点表头的筛选按「本期状态」筛「▲」，'
+          '一眼看出哪几期没收到、拖了多久，直接照着催。'),
+    ('p', '「累计已回款」用的是核销口径 —— 客户一笔钱把两三期一起付了，系统按「先挂先冲」'
+          '自动分摊到各期上，所以不会因为收款和期次对不齐就算错。'),
+    ('p', '状态会分三种提醒，意思不一样，别搞混：'),
+    ('p', '　　「▲还没挂应收 XXX」＝ 这一期该收的钱，你在《应收登记》里还没挂上去，先去补登记；'),
+    ('p', '　　「▲欠 XXX」＝ 应收挂了、票也可能开了，就是钱没回来，该催款了；'),
+    ('p', '　　「✔ 已收清」＝ 到这一期为止累计收够了。'),
+    ('p', '例子：建业森林半岛 24 台，年费 86,400，合同约定半月付一次 → 24 期，每期 3,600。'
+          '到今天已经过了 18 期，累计该回 64,800；实际收到 50,400（只付到 7 月），'
+          '缺口 14,400，约等于欠 4 期 —— ① 里直接显示「▲欠 14,400.00（约 4.0 期）」，'
+          '② 里能看到是 8 月上半月那一期开始断的、拖了多少天。'),
+    ('p', '注意两点：一是一份合同最多排 24 期，两年期的半月付合同排不下，把合同按年拆成两行；'
+          '二是排期是「计划」，《应收登记》是「实际」，两边对不上不是错 —— 正是要靠这个差额'
+          '发现「该挂的应收忘了挂」。《核对表》只保证各期金额加起来等于合同总额。'),
+    ('sec', '十二、日常动作清单'),
     ('p', '每天：有维修、有换件、有报检 —— 《应收登记》加一行；有钱到账 —— 《收款登记》加一行。'),
-    ('p', '每周：打开《到期与提醒》，① 催合同、② 约年检、③ 转收费、④ 催款，四块顺着做一遍。'),
+    ('p', '每周：打开《到期与提醒》，① 催合同、② 约年检、③ 转收费、④ 催款，四块顺着做一遍；'
+          '再看《分期收款计划》② 筛出「▲」的期次，分期付款的合同照着催。'),
     ('p', '每月：看《月度汇总》①，本月应收多少、收回来多少、累计还欠多少；看《应收对账》，按欠款余额从大到小排一排（用筛选）。'),
-    ('p', '每年：《基础资料》B3 改年度；《维保合同》里到期的续签、改合同起止和年费。'),
-    ('sec', '十二、几个容易踩的坑'),
+    ('p', '每年：《基础资料》D3 改年度；《维保合同》里到期的续签、改合同起止和年费。'),
+    ('sec', '十三、几个容易踩的坑'),
     ('p', '① 淡黄格＝手工填，浅灰格＝公式自动算。往灰格里打字会把公式覆盖掉，那一行就废了。'
           '不小心覆盖了，按 Ctrl+Z 撤销，或者从上下相邻行往下拉一下把公式补回来。'),
     ('p', '② 「客户项目」一定要从下拉里选，别手打。手打多一个空格、少一个字，就对不上号了，核对列会报「★《维保合同》里没这个项目」。'),
@@ -1199,7 +1418,8 @@ DOC = [
     ('p', '⑤ 关联应收单号是选填的，不填不影响对账总数，只影响《应收登记》P、Q 两列那一行显示得准不准。'),
     ('p', '⑥ 改完数据数字没变，按 Ctrl＋Alt＋F9 强制重算一次。'),
     ('p', '⑦ 行不够了：选中最后一行整行，往下拖填充柄，公式和下拉都会跟着复制。'
-          '《电梯资料》留了 600 行、《维保合同》《应收对账》300 行、《应收登记》1500 行、《收款登记》2000 行，一般够用好几年。'),
+          '《电梯资料》留了 600 行、《维保合同》《应收对账》《分期收款计划》300 个合同、'
+          '《应收登记》1500 行、《收款登记》2000 行，一般够用好几年。'),
 ]
 dr = 4
 for kind, txt in DOC:
@@ -1223,11 +1443,12 @@ print('  ✓ 使用说明')
 # 收尾：表序、页签颜色、保存
 # ══════════════════════════════════════════════════════════════
 ORDER = ['主页', '使用说明', '基础资料', '电梯资料', '维保合同', '应收登记', '收款登记',
-         '应收对账', '到期与提醒', '月度汇总', '核对表', '_自动清单']
+         '应收对账', '分期收款计划', '到期与提醒', '月度汇总', '核对表', '_自动清单']
 wb._sheets = [SH[n] for n in ORDER]
 TABC = {'主页': C_MAIN, '使用说明': '808080', '基础资料': C_BASE, '电梯资料': C_BASE,
         '维保合同': C_BASE, '应收登记': C_BIZ, '收款登记': C_BIZ, '应收对账': C_RPT,
-        '到期与提醒': C_WARN, '月度汇总': C_RPT, '核对表': C_DASH, '_自动清单': 'BFBFBF'}
+        '分期收款计划': C_DASH, '到期与提醒': C_WARN, '月度汇总': C_RPT,
+        '核对表': C_DASH, '_自动清单': 'BFBFBF'}
 for n, c in TABC.items():
     SH[n].sheet_properties.tabColor = c
 for n in ORDER:
