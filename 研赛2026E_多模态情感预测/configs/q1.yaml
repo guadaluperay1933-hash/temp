@@ -1,0 +1,74 @@
+# 问题1：多模态情感特征提取与时序对齐 —— 全部参数
+# 运行：python -m q1.extract --config configs/q1.yaml [--run-name xxx] [--set text.model=本地路径 ...]
+# 相对路径均以项目根目录（研赛2026E_多模态情感预测/）为基准。
+
+run_name: default
+seed: 42
+num_threads: null            # torch CPU 线程数；null = 不设置（torch 默认）
+
+paths:
+  video_root: data/附件1                 # <video_id>/<clip_id>.mp4
+  label_xlsx: data/附件1/label-100.xlsx  # 列：video_id, clip_id, text, label, annotation
+  label_sheet: 0
+  output_root: outputs/q1                # 产物写到 outputs/q1/<run_name>/
+
+media:
+  ffmpeg: null                 # null → imageio-ffmpeg 自带二进制 → 系统 PATH
+  video_backend: cv2           # cv2 | ffmpeg（cv2 打不开时自动退回 ffmpeg 管道解码）
+
+text:
+  model: bert-base-uncased     # HuggingFace 名或本地目录；国内可设 HF_ENDPOINT=https://hf-mirror.com
+  max_len: 50                  # 与附件2 相同：[CLS] + 词元 + [SEP] ≤ 50
+  device: null                 # null → cuda > mps > cpu
+  batch_size: 16
+
+audio:
+  sr: 16000                    # 重采样到 16 kHz 单声道（ffmpeg -ac 1 -ar 16000）
+  win_ms: 25                   # 分析窗 25 ms
+  hop_ms: 10                   # 帧移 10 ms → 100 Hz（与 COVAREP 相同）
+  n_fft: 512
+  window: hann
+  n_mels: 40
+  fmin_mel: 0
+  fmax_mel: null               # null → sr/2
+  n_mfcc: 25
+  n_delta2: 13                 # Δ² 只取 MFCC0–12
+  delta_width: 9
+  f0_method: pyin              # pyin | yin（yin 更快但无浊音概率）
+  f0_min: 65
+  f0_max: 500
+  f0_frame_ms: 64              # F0 分析窗（向上取 2 的幂 → 1024 点）
+  rolloff_percent: 0.85
+  energy_floor_db: -100        # 对数能量下限（静音帧仍为非零行）
+  h1h2_search_rel: 0.15        # 谐波峰搜索半宽 = max(1 bin, 0.15·F0)
+  vad_top_db: 30               # 能量 VAD：低于全片最大 RMS 30 dB 视为静音
+
+vision:
+  model_path: q1/models/face_landmarker.task   # MediaPipe FaceLandmarker（Apache-2.0，3.7 MB）
+  sample_fps: null             # null → 处理每一帧；设为数值则按该帧率均匀抽帧（加速）
+  max_side: null               # 可选：长边缩放到该像素数再检测（null 不缩放）
+  presence_threshold: 1.0      # AU 出现阈值（0–5 强度尺度）
+  au25_gain: 2.0               # AU25 双唇分开的增益 g
+  min_face_detection_confidence: 0.5
+  min_face_presence_confidence: 0.5
+  min_tracking_confidence: 0.5
+  crop_retry: true             # 整帧检出率 < crop_retry_below 时，整段改用居中正方形裁剪重跑，取检出率高的一遍
+  crop_retry_below: 0.8
+  gl_lib_dir: null             # Linux 无 libEGL 时：含 libEGL.so.1 / libGLESv2.so.2 的目录（也可用环境变量 Q1_GL_LIB_DIR）
+
+align:
+  method: auto                 # auto | ctc | vad_proportional
+  ctc_model: facebook/wav2vec2-base-960h
+  device: null
+  vad_top_db: 30
+  chunk_s: 60                  # CTC 推理分块长度（秒）；附件1 最长 34.6 s，不会分块
+
+sequence:
+  max_len_text: 50             # 对齐版本 / 文本位置数
+  max_len_av: 500              # 非对齐版本语音、视觉位置数上限
+  grid_s: 0.08                 # 非对齐版本的时间栅格 80 ms（12.5 Hz）：500 × 0.08 = 40 s > 34.567 s
+
+output:
+  dtype: float16               # float16 | float32。float16 + gzip 使两份特征文件合计约十几 MB（附件总限 50 MB）
+  compress: gzip               # gzip | none
+  save_cache: true             # 每条样本的中间结果缓存到 cache/，配合 --resume 断点续跑

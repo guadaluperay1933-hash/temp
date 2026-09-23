@@ -1,0 +1,104 @@
+# 问题3：可解释性多模态情感预测 —— AMEE（可加性模态专家与证据注意力网络，Additive Modality Experts with Evidence attention）
+# 所有键都可以在命令行用 --set a.b=value 覆盖；--quick 时再叠加文末 quick 段。
+# 训练/验证/附件4 必须使用同一特征版本（version），读入数据的版本与此不符时直接报错。
+
+run_name: null            # 缺省为 amee_<version>
+version: aligned          # aligned | unaligned
+data: null                # 附件2 路径；缺省 data/附件2/<version>_50.pkl
+att4: null                # 附件4 特征文件（文件名未知 → 命令行给出）；为空则跳过附件4 推理
+att4_split: auto          # auto：单划分直接用；多划分优先 test
+videos: null              # 附件4 原始视频根目录（<video_id>/<clip_id>.mp4）；为空则只按位置给证据、不抽关键帧
+device: auto              # auto | cpu | cuda | mps
+threads: null             # torch 线程数（CPU）；null 保持默认
+
+model:
+  arch: amee              # amee | concat（不可解释的拼接融合对照：同样的编码器 + 注意力池化 + 拼接 MLP）
+  d_model: 128
+  n_layers: 2             # 单模态编码器 Transformer 层数（common.layers.ModalityEncoder）
+  n_heads: 4
+  d_ff: 256
+  dropout: 0.2
+  input_dropout: 0.1
+  conv_kernel: 3
+  att_hidden: 64          # 证据注意力打分 MLP 隐层：score(h) = w^T tanh(W h)
+  intensity_bound: 3.0    # 位置值与交互专家输出的幅度上界 B：v = B·tanh(·)
+  use_interaction: true   # 交互专家（关闭 = 消融 w/o interaction，门控只在三个模态专家上）
+  inter_layers: 1         # 交互专家 Transformer 层数（输入 CLS + 三个模态向量）
+  gate_hidden: 64         # 门控 MLP 隐层
+  head_hidden: 128        # 仅 concat 对照模型使用
+  text_exclude_special: true  # 文本证据注意力不看 [CLS]/[SEP]（有效范围首尾位置），保证文本证据都能落回到词
+  max_positions: 100      # 长序列时间下采样：L_m > max_positions 时步长 ⌈L_m/max_positions⌉（非对齐语音/视觉 500→100）
+  temporal_stride: null   # null = 按 max_positions 自动；也可显式给 {text: 1, audio: 5, vision: 5}
+
+loss:
+  lambda_cls: 0.5         # 加权交叉熵
+  lambda_uni: 0.3         # 各模态专家"自己的意见"也要能预测 y：Σ_m L1(s_m, y)
+  lambda_ent: 0.01        # 证据注意力归一化熵（证据简洁）
+  lambda_tv: 0.01         # 语音/视觉注意力全变差（证据成段）
+  lambda_null: 0.1        # 空联盟输出 ŷ(∅) 的监督（让 Shapley 基准值 = 无信息时的最优常数）
+  class_weight: inv_sqrt  # inv_sqrt | none
+
+train:
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  batch_size: 64
+  epochs: 40
+  warmup_epochs: 1        # 余弦退火 + 线性预热
+  grad_clip: 1.0
+  patience: 8             # 早停：验证综合分连续 patience 轮不提升
+  seeds: [1, 2, 3]        # 主模型（full）种子；最终模型取验证综合分最高者
+  eval_batch_size: 256
+  modality_dropout: 0.15  # 每个模态以该概率整段置为不可用（不会三个同时丢）→ Shapley 联盟在训练分布内
+  span_drop:              # 少量随机连续区间置零（common.missing.AugmentConfig）→ 删除检验时"删掉部分位置"也在训练分布内
+    enabled: true
+    p_sample: 0.2
+    p_modality: 0.5
+    ratio_range: [0.05, 0.3]
+    max_spans: 3
+    p_full_drop: 0.0
+
+decision:
+  bias_metric: f1_weighted   # 在验证集 logits 上网格搜索中性类偏置
+  bias_grid: [-2.0, 2.0, 41] # linspace(lo, hi, n)
+
+explain:
+  splits: [valid, test]   # 生成解释的划分（统计、图、错误归因）
+  faith_split: test       # 忠实性检验所用划分
+  topk_text: 3            # 文本取 |贡献| 前 3 个词元（不含 [CLS]/[SEP]），相邻者合并为词段
+  av_frac: 0.1            # 语音/视觉候选位置数 k = clip(round(av_frac·n), av_kmin, av_kmax)
+  av_kmin: 2
+  av_kmax: 12
+  merge_gap: 1            # 位置间隔 ≤ merge_gap 的候选合并为同一连续片段
+  max_segments: 2         # 语音/视觉每个模态至多保留 2 个片段（按片段内 Σ|贡献| 排序）
+  ig_steps: 32            # 积分梯度步数（中点黎曼和，基线 = 全零特征）
+  ig_batch: 64
+  n_random: 5             # 删除/保留检验的随机对照次数
+  curve_fracs: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  curve_random: 3         # AOPC 曲线的随机顺序次数
+  seed: 2026
+  n_typical_cards: 6      # 测试集典型样本解释卡数量
+
+timemap:
+  tokenizer: bert-base-uncased   # 文本词元 → 词 的映射；加载失败时退回"位置 1..n 依次对应空格分词的词"
+  align_method: auto             # q1.align.align_words 的 method：auto | ctc | vad_proportional
+  audio_sr: 16000
+  r2_threshold: 0.9              # 非对齐版本：长度 ~ 时长 过原点回归 R² ≥ 阈值 → 固定帧率映射，否则均匀映射
+  max_frames: 3                  # 解释卡里最多抽几张关键帧
+
+ablation:
+  seeds: [1]              # 消融/对照模型的种子
+  variants:               # 变体名 → 相对主配置的覆盖（点路径）；full 为主模型
+    full: {}
+    no_interaction: {model.use_interaction: false}
+    no_uni: {loss.lambda_uni: 0.0}
+    no_sparse: {loss.lambda_ent: 0.0, loss.lambda_tv: 0.0}
+    concat: {model.arch: concat}
+
+# --quick：只用于合成数据跑通（数值无意义），真实数据不要加
+quick:
+  train.epochs: 15
+  train.patience: 6
+  train.seeds: [1]
+  explain.ig_steps: 16
+  explain.n_random: 3
+  explain.curve_random: 2

@@ -12,14 +12,49 @@
     4. 可靠性门控  α = softmax_m( MLP_m([z_m; ρ_m]) )
        融合        [CLS, z_m + e_m + W_ρ ρ_m] → Transformer → c；  h = c + Σ_m α_m z_m
     5. 输出        f = MLP(h)；ŷ = 3·tanh(w_r^T f)；ℓ = W_c f（3 类 logits）
+
+前置的时间下采样（只对长序列）：模态 m 的最大位置数 L_m 超过 max_positions 时，按步长 s_m = ⌈L_m / max_positions⌉
+把相邻 s_m 行做"可用行掩码均值"合并（窗口内有任一可用行即可用、有任一有效行即有效）。对齐版本 L=50 不受影响；
+非对齐版本语音/视觉 500 → 100，注意力计算量约降为 1/25（CPU 上训练才可行）。
 """
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from common.data import FEAT_DIMS, MODALITIES
 from common.layers import MaskedAttentionPool, ModalityEncoder, TimeEncoding, masked_mean, relative_time
+
+
+def pool_time(x: torch.Tensor, avail: torch.Tensor, valid: torch.Tensor, s: int):
+    """按步长 s 合并相邻位置：x 取窗口内可用行的均值；avail = 窗口内有可用行；valid = 窗口内有有效行。"""
+    if s <= 1:
+        return x, avail, valid
+    B, L, D = x.shape
+    pad = (-L) % s
+    if pad:
+        x = F.pad(x, (0, 0, 0, pad))
+        avail = F.pad(avail, (0, pad))
+        valid = F.pad(valid, (0, pad))
+    Lp = x.shape[1] // s
+    a = (avail & valid).view(B, Lp, s).float()
+    xs = (x.view(B, Lp, s, D) * a.unsqueeze(-1)).sum(2) / a.sum(2).clamp(min=1.0).unsqueeze(-1)
+    return xs, a.sum(2) > 0, valid.view(B, Lp, s).any(2)
+
+
+def resolve_strides(cfg: dict, seq_lens: dict) -> dict:
+    """把 model.temporal_stride 解析成 {m: s_m} 写回配置（存进 model.pt，推理时按同样步长）。
+    缺省（null）：L_m <= max_positions 时 1，否则 ⌈L_m / max_positions⌉。"""
+    mc = cfg["model"]
+    st = mc.get("temporal_stride")
+    if not isinstance(st, dict):
+        mp = int(mc.get("max_positions", 100) or 0)
+        st = {m: (int(math.ceil(seq_lens[m] / mp)) if mp and seq_lens[m] > mp else 1) for m in MODALITIES}
+    mc["temporal_stride"] = {m: int(st.get(m, 1)) for m in MODALITIES}
+    return cfg
 
 
 class CrossModalReconstruction(nn.Module):
@@ -80,6 +115,8 @@ class MRGNet(nn.Module):
         self.d_model = d
         self.use_rec = bool(c.get("use_reconstruction", True)) and len(self.modalities) >= 2
         self.use_gate = bool(c.get("use_gate", True))
+        st = c.get("temporal_stride") if isinstance(c.get("temporal_stride"), dict) else {}
+        self.strides = {m: int(st.get(m, 1)) for m in self.modalities}
         drop = float(c.get("dropout", 0.2))
         self.encoders = nn.ModuleDict({m: ModalityEncoder(feat_dims[m], d, int(c.get("n_layers", 2)),
                                                           int(c.get("n_heads", 4)), int(c.get("d_ff", 256)), drop,
@@ -105,12 +142,23 @@ class MRGNet(nn.Module):
         self.reg_out = nn.Linear(hh, 1)
         self.cls_out = nn.Linear(hh, 3)
 
+    def prepare(self, view: dict) -> dict:
+        """时间下采样（步长 1 时原样返回）；avail 与 valid 取交集（保险）。"""
+        out = {}
+        for m in self.modalities:
+            x, a, v = pool_time(view[f"x_{m}"], view[f"avail_{m}"] & view[f"valid_{m}"], view[f"valid_{m}"],
+                                self.strides[m])
+            out[f"x_{m}"], out[f"avail_{m}"], out[f"valid_{m}"] = x, a, v
+        return out
+
     def forward(self, view: dict) -> dict:
         mods = self.modalities
+        # 可用率 ρ 在原始分辨率上计算（下采样后部分缺失的窗口会算作可用，会高估 ρ）
+        rho = torch.stack([(view[f"avail_{m}"] & view[f"valid_{m}"]).sum(1).float()
+                           / view[f"valid_{m}"].sum(1).float().clamp(min=1.0) for m in mods], dim=1)  # (B,M)
+        view = self.prepare(view)
         avail = {m: view[f"avail_{m}"] for m in mods}
         valid = {m: view[f"valid_{m}"] for m in mods}
-        # avail 可能超出 valid（数据里极少数异常行在 common.data 已并入 valid）；这里保险起见取交集
-        avail = {m: avail[m] & valid[m] for m in mods}
         H = {m: self.encoders[m](view[f"x_{m}"], avail[m], valid[m]) for m in mods}
         rec, cm_gate = None, None
         if self.use_rec:
@@ -119,8 +167,6 @@ class MRGNet(nn.Module):
         z, tatt = {}, {}
         for m in mods:
             z[m], tatt[m] = self.pool[m](H[m], valid[m])
-        nvalid = {m: valid[m].sum(1).float() for m in mods}
-        rho = torch.stack([(avail[m].sum(1).float() / nvalid[m].clamp(min=1.0)) for m in mods], dim=1)  # (B,M)
         Z = torch.stack([z[m] for m in mods], dim=1)                                                    # (B,M,d)
         if self.use_gate:
             s = torch.cat([self.gate_mlp[m](torch.cat([z[m], rho[:, i:i + 1]], -1)) for i, m in enumerate(mods)], 1)
@@ -135,7 +181,7 @@ class MRGNet(nn.Module):
         y = 3.0 * torch.tanh(self.reg_out(f).squeeze(-1))
         logits = self.cls_out(f)
         return {"y": y, "logits": logits, "h": h, "alpha": alpha, "rho": rho, "rec": rec, "cm_gate": cm_gate,
-                "time_attn": tatt}
+                "time_attn": tatt, "view": view}
 
 
 class LateFusionBaseline(nn.Module):
@@ -168,7 +214,7 @@ class LateFusionBaseline(nn.Module):
         h = self.body(u)
         f = self.head(h)
         return {"y": 3.0 * torch.tanh(self.reg_out(f).squeeze(-1)), "logits": self.cls_out(f), "h": h,
-                "alpha": None, "rho": rho, "rec": None, "cm_gate": None, "time_attn": None}
+                "alpha": None, "rho": rho, "rec": None, "cm_gate": None, "time_attn": None, "view": view}
 
 
 def build_model(cfg: dict, feat_dims: dict | None = None) -> nn.Module:

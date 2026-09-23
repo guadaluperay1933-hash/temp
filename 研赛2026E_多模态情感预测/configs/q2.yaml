@@ -25,6 +25,8 @@ model:
   head_hidden: 128        # 输出 MLP 隐层
   use_reconstruction: true   # 跨模态重构模块（关闭 = 消融 w/o reconstruction，同时不计 L_rec）
   use_gate: true             # 可靠性门控（关闭 = α 取均匀 1/M）
+  max_positions: 100         # 长序列时间下采样：L_m > max_positions 时步长 ⌈L_m/max_positions⌉（非对齐语音/视觉 500→100）
+  temporal_stride: null      # null = 按 max_positions 自动；也可显式给 {text: 1, audio: 5, vision: 5}
 
 augment:                  # 训练期缺失增广（common.missing.AugmentConfig），关闭 = 消融 w/o augmentation
   enabled: true
