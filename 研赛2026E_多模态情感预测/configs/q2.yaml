@@ -1,0 +1,106 @@
+# 问题2：模态局部缺失条件下的鲁棒情感预测 —— MRG-Net（缺失感知重构与可靠性门控融合网络）
+# 所有键都可以在命令行用 --set a.b=value 覆盖；--quick 时再叠加文末 quick 段。
+# 训练/验证/附件3 必须使用同一特征版本（version），读入数据的版本与此不符时直接报错。
+
+run_name: null            # 缺省为 mrgnet_<version>
+version: aligned          # aligned | unaligned
+data: null                # 附件2 路径；缺省 data/附件2/<version>_50.pkl
+att3: null                # 附件3 路径（文件名未知 → 命令行给出）；为空则跳过附件3 预测
+att3_split: auto          # auto：单划分直接用；多划分优先 test
+device: auto              # auto | cpu | cuda | mps
+threads: null             # torch 线程数（CPU）；null 保持默认
+
+model:
+  arch: mrgnet            # mrgnet | late_fusion
+  modalities: [text, audio, vision]
+  d_model: 128
+  n_layers: 2             # 单模态编码器 Transformer 层数
+  n_heads: 4
+  d_ff: 256
+  dropout: 0.2
+  input_dropout: 0.1
+  conv_kernel: 3
+  fusion_layers: 1        # 模态 token 融合 Transformer 层数
+  gate_hidden: 64         # 可靠性门控打分 MLP 隐层
+  head_hidden: 128        # 输出 MLP 隐层
+  use_reconstruction: true   # 跨模态重构模块（关闭 = 消融 w/o reconstruction，同时不计 L_rec）
+  use_gate: true             # 可靠性门控（关闭 = α 取均匀 1/M）
+
+augment:                  # 训练期缺失增广（common.missing.AugmentConfig），关闭 = 消融 w/o augmentation
+  enabled: true
+  p_sample: 0.8
+  p_modality: 0.5
+  ratio_range: [0.05, 0.9]
+  max_spans: 3
+  p_full_drop: 0.1
+  keep_one_intact: false
+
+loss:
+  lambda_cls: 0.5
+  lambda_rec: 0.1
+  lambda_kd: 0.5
+  kd_temperature: 2.0
+  class_weight: inv_sqrt  # inv_sqrt | none
+
+train:
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  batch_size: 64
+  epochs: 40
+  scheduler: cosine       # cosine（含 warmup）| plateau | none
+  warmup_epochs: 1
+  plateau_factor: 0.5
+  plateau_patience: 3
+  grad_clip: 1.0
+  patience: 8             # 早停：验证综合分连续 patience 轮不提升
+  seeds: [1, 2, 3]        # 主模型（full）的随机种子；报告 mean±std，最终模型取验证综合分最高的种子
+  eval_batch_size: 256
+
+protocol:
+  mixed:                  # 固定"混合缺失协议"（仿附件3：随机 1~3 个模态、各 1~max_spans 段连续置零）
+    p_modality: 0.5
+    ratio_range: [0.1, 0.7]
+    max_spans: 2
+    p_full_drop: 0.0
+    valid_seed: 2026      # 验证集：早停 / 选种子 / 调阈值都用这一套掩码
+    test_seed: 2027       # 测试集：消融表 / 错误归因用这一套掩码
+  law:                    # 缺失规律评测（所有模型用完全相同的掩码）
+    splits: [test, valid]
+    models: [full, no_aug, naive_impute, no_rec, no_kd, no_gate, late_fusion]
+    combos: [T, A, V, TA, TV, AV, TAV]
+    ratios: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    mask_seeds: [11, 12, 13]
+    position_combos: [T, A, V, TAV]
+    position_ratios: [0.2, 0.4]
+    frag_combos: [T, A, V, TAV]
+    frag_ratios: [0.3, 0.6]
+    frag_n_spans: [1, 2, 3, 5]
+    mixed_seeds: [2027, 2028, 2029]
+
+decision:
+  bias_metric: f1_weighted   # 在验证集混合缺失协议的 logits 上网格搜索中性类偏置
+  bias_grid: [-2.0, 2.0, 41] # linspace(lo, hi, n)
+
+ablation:
+  seeds: [1]              # 消融/基线模型的种子（算力允许可改成 [1, 2, 3]）
+  naive_impute_base: no_aug   # 朴素插补基线 = 线性插值 + 该变体的模型
+  variants:               # 变体名 → 相对主配置的覆盖（点路径）；full 为主模型
+    full: {}
+    no_aug: {augment.enabled: false}
+    no_rec: {model.use_reconstruction: false}
+    no_kd: {loss.lambda_kd: 0.0}
+    no_gate: {model.use_gate: false}
+    late_fusion: {model.arch: late_fusion, augment.enabled: false}
+    uni_text: {model.modalities: [text]}
+    uni_audio: {model.modalities: [audio]}
+    uni_vision: {model.modalities: [vision]}
+
+# --quick：只用于合成数据跑通（数值无意义），真实数据不要加
+quick:
+  train.epochs: 12
+  train.patience: 6
+  train.seeds: [1, 2]
+  protocol.law.splits: [test]
+  protocol.law.ratios: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  protocol.law.mask_seeds: [11]
+  protocol.law.mixed_seeds: [2027]

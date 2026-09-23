@@ -1,0 +1,9 @@
+# 赛题附件（体积大、不入库）：按 说明.md 放到 data/ 下
+data/
+# 运行产物：训练好的模型、预测结果、图表都在这里；需要提交的结果按 说明.md 另行拷出
+outputs/
+*.pt
+!**/submit/**/*.pt
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
