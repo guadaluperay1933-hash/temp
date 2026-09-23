@@ -46,7 +46,8 @@ FILL_HELP = PatternFill('solid', fgColor='EDEDED')
 
 HTXT = {'合同未回': '有合同,已送出未回,未见合同,未签'}
 STATES = ['正常维保', '安装免保', '技术免保', '质保期内', '暂停维保', '已解约']
-CYCLES = ['一次性', '半年付', '季度付', '月付', '半月付']
+CYCLES = ['一次性', '年付', '半年付', '季度付', '月付', '半月付']
+NOSCHED_STATES = ['安装免保', '技术免保', '质保期内', '暂停维保', '已解约']
 
 # 三种布局：逻辑列 → 原表列字母
 LAYOUT_A = dict(g='G', h='H', i='I', j='J', k='K', l='L', m='M', n='N', o='O', p='P', q='Q', s='R',
@@ -77,22 +78,28 @@ def parse_pay(txt):
     return None
 
 
-def old_widths(ws, upto):
-    w = {}
+def old_dims(ws, upto):
+    """原来每一列的列定义（宽度 + 整列默认格式），按列号展开"""
+    d = {}
     for key, cd in ws.column_dimensions.items():
         lo = cd.min or CI(key)
         hi = cd.max or lo
         for c in range(lo, min(hi, upto) + 1):
-            if cd.width:
-                w[c] = cd.width
-    return w
+            d[c] = cd
+    return d
 
 
-def set_widths(ws, mp):
-    dh = DimensionHolder(worksheet=ws)
-    for c in sorted(mp):
-        dh[CL(c)] = ColumnDimension(ws, index=CL(c), width=mp[c])
-    ws.column_dimensions = dh
+def clone_dim(ws, cd, idx, width=None, hidden=None):
+    nd = copy.copy(cd) if cd is not None else ColumnDimension(ws, index=CL(idx))
+    if cd is not None:
+        nd._style = copy.copy(cd._style)
+    nd.index = CL(idx)
+    nd.min = nd.max = idx
+    if width is not None:
+        nd.width = width
+    if hidden is not None:
+        nd.hidden = hidden
+    return nd
 
 
 def style_like(dst, src, fmt=None, auto=False, wrap=None):
@@ -108,7 +115,7 @@ def style_like(dst, src, fmt=None, auto=False, wrap=None):
         dst.alignment = Alignment(horizontal=a.horizontal, vertical=a.vertical or 'center', wrap_text=wrap)
 
 
-wb = openpyxl.load_workbook(SRC)
+wb = openpyxl.load_workbook(SRC, rich_text=True)   # 不开 rich_text 会把单元格里局部标红的字变成普通字
 COLS = {}   # 每张组表改完之后的列字母，汇总表要用
 
 # ══════════════════════════════════════════════════════════════
@@ -150,7 +157,7 @@ for sn, L in TEAMS:
                 keepJ.add(r)
                 LOG.append(f'{sn}!{L["j"]}{r} 手填 {v} ≠ 单价×台量×年限({calc})，保留手填')
 
-    w0 = old_widths(ws, last_old + 3)
+    d0 = old_dims(ws, last_old + 3)
 
     # ── 插列：收现金额后 1 列；开票应收额后 5 列 ──
     ws.insert_cols(qi + 1, 1)
@@ -178,24 +185,30 @@ for sn, L in TEAMS:
         a0 += 1
     COLS[sn] = C
 
-    # 列宽
-    w1 = {}
-    for c, wd in w0.items():
-        w1[CI(nc(CL(c)))] = wd
-    for k, wd in [('x0', 12), ('t', 12), ('u', 12), ('v', 13), ('w', 34), ('bz', 22),
-                  ('zt', 10), ('zq', 9), ('pg', 16), ('jd', 13), ('yq', 12), ('wn', 12), ('lj', 13),
-                  ('key', 20), ('kd', 11), ('nd', 7), ('tn', 7), ('kn', 7)]:
-        w1[CI(C[k])] = wd
-    w1[1] = max(w1.get(1, 4), 9)
-    set_widths(ws, w1)
-    for k in ['key', 'kd', 'nd', 'tn', 'kn']:
-        ws.column_dimensions[C[k]].hidden = True
+    # 列定义（宽度 + 整列默认格式）跟着右移；新列借用旁边原列的整列格式
+    dh = DimensionHolder(worksheet=ws)
+    for c, cd in d0.items():
+        n = CI(nc(CL(c)))
+        dh[CL(n)] = clone_dim(ws, cd, n, width=max(cd.width or 9, 9) if c == 1 else None)
+    qd = d0.get(qi)
+    NEWW = [('x0', 12, qd), ('t', 12, qd), ('u', 12, qd), ('v', 13, qd), ('w', 36, None), ('bz', 22, None),
+            ('zt', 10, None), ('zq', 9, None), ('pg', 16, None), ('jd', 13, qd), ('yq', 12, qd), ('wn', 12, qd),
+            ('lj', 13, qd), ('key', 20, None), ('kd', 11, None), ('nd', 7, None), ('tn', 7, None), ('kn', 7, None)]
+    for k, wd, base in NEWW:
+        n = CI(C[k])
+        dh[CL(n)] = clone_dim(ws, base, n, width=wd, hidden=k in ('key', 'kd', 'nd', 'tn', 'kn'))
+    ws.column_dimensions = dh
 
     # ── 表头 ──
     hsrc = ws[f"{C['s']}1"]           # 原「开票应收额」表头，拿它的样式
     if L is LAYOUT_C and ws[f"{C['pay']}1"].value in (None, ''):
         ws[f"{C['pay']}1"] = '付款约定'
         style_like(ws[f"{C['pay']}1"], hsrc)
+    for k, sub in [('p', '(开了票/要开票的)'), ('q', '(不开票的现金)')]:
+        c = ws[f'{C[k]}1']
+        base = str(c.value or '').split('\n')[0].strip()
+        c.value = base + '\n' + sub
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     NEWH = [('x0', '收款不开票\n(转账/收据)', True), ('t', '到账未开票\n(待补票)', False),
             ('u', '未开票应收', False), ('v', '应收余额\n(欠款)', False), ('w', '回款情况', False),
             ('bz', '收款备注', True), ('zt', '维保状态', True), ('zq', '付款周期', True),
@@ -226,6 +239,9 @@ for sn, L in TEAMS:
         UNRET = (f'OR(ISNUMBER(SEARCH("未",$A{r})),ISNUMBER(SEARCH("送出",$A{r})),'
                  f'AND(TRIM($A{r})="",NOT(ISNUMBER($D{r})),N({R("g")})=0))')
         FREE = f'OR({R("zt")}="安装免保",{R("zt")}="技术免保",{R("zt")}="质保期内")'
+        NOSCH = 'OR(' + ','.join(f'{R("zt")}="{x}"' for x in NOSCHED_STATES) + ')'
+        KEYR = f"${C['key']}$3:${C['key']}${TOT_END}"
+        RENEW = f'COUNTIFS({KEYR},{R("key")},$E$3:$E${TOT_END},">"&$E{r})>0'
         src_in = ws[f"{C['q']}{r}"] if ws[f"{C['q']}{r}"].has_style else ws[f"{C['q']}3"]
         src_txt = ws[f'F{r}'] if ws[f'F{r}'].has_style else ws['F3']
 
@@ -236,17 +252,18 @@ for sn, L in TEAMS:
 
         # F 到期提醒（沿用原来的【已到期】【即将到期，剩余N天】【正常】写法）
         put('F', f'=IF({BLK},"",IF({UNRET},"【合同未回】","")'
-                 f'&IF(NOT(ISNUMBER($E{r})),IF({UNRET},"","【未填合同期】"),'
-                 f'IF($E{r}<TODAY(),"【已到期】",IF($E{r}-TODAY()<=提醒天数,'
-                 f'"【即将到期，剩余"&($E{r}-TODAY())&"天】","【正常】")))'
-                 f'&IF({FREE},"【"&{R("zt")}&"】",""))',
+                 f'&IF({R("zt")}="已解约","",IF(NOT(ISNUMBER($E{r})),IF({UNRET},"","【未填合同期】"),'
+                 f'IF({RENEW},"【已续签】",IF($E{r}<TODAY(),"【已到期】",IF($E{r}-TODAY()<=提醒天数,'
+                 f'"【即将到期，剩余"&($E{r}-TODAY())&"天】","【正常】")))))'
+                 f'&IF(OR({R("zt")}="",{R("zt")}="正常维保"),"","【"&{R("zt")}&"】"))',
             fmt='General', src=src_txt, auto=False, wrap=True)
         # J 合同应收 / L 总应收
         if r not in keepJ:
             put('j', f'=IF(OR(N({R("g")})=0,N({R("h")})=0),"",'
                      f'ROUND(N({R("g")})*N({R("h")})*IF(N({R("i")})=0,1,N({R("i")})),2))', auto=False,
                 src=ws[f"{C['j']}{r}"] if ws[f"{C['j']}{r}"].has_style else src_in)
-        put('l', f'=IF({BLK},"",IF(AND(N({R("j")})=0,N({R("k")})=0),"",ROUND(N({R("j")})+N({R("k")}),2)))', auto=False,
+        put('l', f'=IF({BLK},"",IF(AND(N({R("j")})=0,N({R("k")})=0),IF(N({R("n")})>0,ROUND(N({R("n")}),2),""),'
+                 f'ROUND(N({R("j")})+N({R("k")}),2)))', auto=False,
             src=ws[f"{C['l']}{r}"] if ws[f"{C['l']}{r}"].has_style else src_in)
         # 收款区
         c = ws[f"{C['x0']}{r}"]
@@ -257,14 +274,21 @@ for sn, L in TEAMS:
                  f'ROUND(N({R("l")})-N({R("p")})-N({R("q")})-N({R("x0")}),2)))')
         put('u', f'=IF(OR({BLK},{R("v")}=""),"",MAX(0,N({R("v")}))-N({R("s")}))')
         RCV = f'(N({R("p")})+N({R("q")})+N({R("x0")}))'
-        put('w', f'=IF({BLK},"",IF(N({R("l")})=0,IF({RCV}=0,"—未填单价","未填单价，已收 "&TEXT({RCV},"#,##0.00")),'
-                 f'IF(N({R("v")})>0.005,"欠 "&TEXT(N({R("v")}),"#,##0.00")'
+        YQ = R('yq')
+        OVERINV = f'(N({R("n")})-MIN(N({R("n")}),N({R("p")}))-N({R("s")}))'
+        put('w', f'=IF({BLK},"",IF(N({R("l")})=0,IF({RCV}=0,IF({FREE},"免保，不计费","—未填单价"),'
+                 f'"未填单价，已收 "&TEXT({RCV},"#,##0.00")),'
+                 f'IF(N({R("v")})>0.005,IF(AND(ISNUMBER({YQ}),N({YQ})<=0.005),"未到期待收 ","欠 ")'
+                 f'&TEXT(N({R("v")}),"#,##0.00")'
+                 f'&IF(AND(ISNUMBER({YQ}),N({YQ})>0.005,N({YQ})<N({R("v")})-0.005),"（其中已逾期 "&TEXT(N({YQ}),"#,##0.00")&"）","")'
                  f'&IF(N({R("s")})>0,"（开票未到账 "&TEXT(N({R("s")}),"#,##0.00")&"）","")'
                  f'&IF(N({R("u")})>0,"（未开票 "&TEXT(N({R("u")}),"#,##0.00")&"）",""),'
                  f'IF(N({R("v")})<-0.005,"多收 "&TEXT(-N({R("v")}),"#,##0.00"),"✔ 已结清")))'
                  f'&IF(N({R("t")})>0,"｜到账未开票 "&TEXT(N({R("t")}),"#,##0.00")&"，待补票","")'
+                 f'&IF({OVERINV}>0.005,"｜多开票 "&TEXT({OVERINV},"#,##0.00")&"，核对发票","")'
                  f'&IF(N({R("q")})>0,"｜收现 "&TEXT(N({R("q")}),"#,##0.00"),"")'
-                 f'&IF(N({R("x0")})>0,"｜收款不开票 "&TEXT(N({R("x0")}),"#,##0.00"),""))',
+                 f'&IF(N({R("x0")})>0,"｜收款不开票 "&TEXT(N({R("x0")}),"#,##0.00"),"")'
+                 f'&IF(AND(N({R("j")})=0,N({R("k")})=0,N({R("l")})>0),"｜未填单价，总应收按开票金额暂估",""))',
             fmt='General', wrap=True)
         c = ws[f"{C['bz']}{r}"]
         style_like(c, src_txt, fmt='General', wrap=True)
@@ -277,17 +301,18 @@ for sn, L in TEAMS:
             style_like(ws[f'{C[k]}{r}'], src_txt, fmt='General')
         NPY = (f'IF({R("zq")}="半年付",2,IF({R("zq")}="季度付",4,IF({R("zq")}="月付",12,'
                f'IF({R("zq")}="半月付",24,1))))')
-        put('tn', f'=IF(OR({BLK},NOT(ISNUMBER($D{r})),NOT(ISNUMBER($E{r}))),"",IF($E{r}<$D{r},"",'
-                  f'IF({NPY}=1,1,MAX(1,ROUND(($E{r}-$D{r}+1)/365*{NPY},0)))))', fmt='0')
+        ONCE = f'OR({R("zq")}="",{R("zq")}="一次性")'
+        put('tn', f'=IF(OR({BLK},NOT(ISNUMBER($D{r})),NOT(ISNUMBER($E{r})),{NOSCH}),"",IF($E{r}<$D{r},"",'
+                  f'IF({ONCE},1,MAX(1,ROUND(($E{r}-$D{r}+1)/365*{NPY},0)))))', fmt='0')
         put('kn', f'=IF({R("tn")}="","",MIN({R("tn")},MAX(0,INT((TODAY()-付款宽限天数-$D{r})/(($E{r}-$D{r}+1)/{R("tn")}))+1)))', fmt='0')
-        put('pg', f'=IF({R("tn")}="","",IF({R("tn")}=1,IF({R("kn")}>=1,"一次性·已到收款期","一次性·未到期"),'
+        put('pg', f'=IF({R("tn")}="","",IF({ONCE},IF({R("kn")}>=1,"一次性·已到收款期","一次性·未到期"),'
                   f'{R("zq")}&" 第"&{R("kn")}&"/"&{R("tn")}&"期"))', fmt='General')
         put('jd', f'=IF(OR({R("tn")}="",N({R("l")})=0),"",ROUND(N({R("j")})*{R("kn")}/{R("tn")},2)+N({R("k")}))')
         put('yq', f'=IF({R("jd")}="","",MAX(0,ROUND({R("jd")}-{RCV},2)))')
         VR = f"${C['v']}$3:${C['v']}${TOT_END}"
         KR = f"${C['key']}$3:${C['key']}${TOT_END}"
         DR = f'$D$3:$D${TOT_END}'
-        put('wn', f'=IF(OR({BLK},NOT(ISNUMBER($D{r}))),"",SUMIFS({VR},{KR},{R("key")},{DR},"<"&$D{r}))')
+        put('wn', f'=IF(OR({BLK},NOT(ISNUMBER($D{r}))),"",ROUND({R("lj")}-SUMIFS({VR},{KR},{R("key")},{DR},">="&$D{r}),2))')
         put('lj', f'=IF({BLK},"",SUMIFS({VR},{KR},{R("key")}))')
         put('key', f'=IF({BLK},"",TRIM($B{r})&"｜"&TRIM($C{r}))', fmt='General')
         put('kd', f'=IF({BLK},"",MIN(N({R("n")}),N({R("p")})))')
@@ -301,7 +326,7 @@ for sn, L in TEAMS:
                         promptTitle='合同回签', prompt='合同没回来就选「已送出未回 / 未见合同 / 未签」；也可以照旧手写，含“未”或“送出”都算没回。')
     ws.add_data_validation(dv); dv.add(f'A3:A{NR}')
     for k, lst, tip in [('zt', STATES, '安装免保 / 技术免保 / 质保期内会在「到期提醒」里一起提示。'),
-                        ('zq', CYCLES, '决定「截至今天应收」按几期算：半年付 2 期、季度付 4 期、月付 12 期、半月付 24 期，空着按一次性。')]:
+                        ('zq', CYCLES, '决定「截至今天应收」按几期算：年付每年 1 期、半年付 2 期、季度付 4 期、月付 12 期、半月付 24 期，空着按一次性（整份合同一次付）。')]:
         dv = DataValidation(type='list', formula1='"' + ','.join(lst) + '"', allow_blank=True,
                             showErrorMessage=True, showInputMessage=True, promptTitle='填写提示', prompt=tip,
                             errorTitle='只能从下拉里选', error='公式按这几个字来认，请从下拉里选。')
@@ -342,10 +367,29 @@ for col, txt, fill in [('X', '免保/质保\n到期日', FILL_NEW_IN), ('Y', '�
     style_like(c, hsrc)
     c.fill = fill
     c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-for col, wd in [('X', 13), ('Y', 20), ('Z', 26), ('AA', 12), ('AB', 12), ('AC', 12)]:
-    ws.column_dimensions[col].width = wd
-for col in ['AA', 'AB', 'AC']:
-    ws.column_dimensions[col].hidden = True
+wdim = None
+for key, cd in list(ws.column_dimensions.items()):
+    if (cd.min or 0) <= 23 <= (cd.max or 0):
+        wdim = cd
+dh = DimensionHolder(worksheet=ws)
+for key, cd in ws.column_dimensions.items():
+    lo, hi = cd.min or CI(key), cd.max or CI(key)
+    if cd is wdim:
+        dh['W'] = clone_dim(ws, cd, 23)
+    else:
+        dh[key] = cd
+for col, wd, hid in [('X', 13, False), ('Y', 20, False), ('Z', 26, False), ('AA', 12, True),
+                     ('AB', 12, True), ('AC', 12, True), ('AD', 8, True)]:
+    dh[col] = clone_dim(ws, wdim, CI(col), width=wd, hidden=hid)
+if wdim is not None:
+    tail = clone_dim(ws, wdim, 31)
+    tail.max = 16384
+    dh['AE'] = tail
+ws.column_dimensions = dh
+c = ws['AD1']
+c.value = '台量(计数)'
+style_like(c, hsrc)
+c.fill = FILL_HELP
 
 
 def PD(x):
@@ -370,6 +414,9 @@ for r in range(2, LIFT_NR + 1):
         style_like(c, wsrc, fmt='yyyy-mm-dd')
     c = ws[f'X{r}']
     style_like(c, wsrc, fmt='yyyy-mm-dd')
+    c = ws[f'AD{r}']
+    c.value = f'=IF({BLK},0,IF(N($N{r})=0,1,N($N{r})))'     # 台量空着的梯子也算 1 台
+    style_like(c, wsrc, fmt='0')
     c = ws[f'Y{r}']
     c.value = (f'=IF({BLK},"",IF(OR($W{r}="安装免保",$W{r}="技术免保",$W{r}="质保期内"),'
                f'IF(NOT(ISNUMBER($X{r})),"▲免保到期日没填",IF($X{r}<TODAY(),"▲免保已到期，转收费",'
