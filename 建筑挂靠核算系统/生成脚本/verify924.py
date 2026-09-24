@@ -77,7 +77,7 @@ def tot(rows):
         t['tax'] += x['tax']
     t['a_left'] = t['sale'] - t['a_got']
     t['b_left'] = t['b_ar'] - t['b_fee'] - t['b_bond'] - t['b_got']
-    t['transit'] = t['a_got'] - t['b_got'] - t['b_fee'] - t['b_bond']
+    t['transit'] = t['a_got'] - t['b_got']
     t['gap'] = t['due'] - t['done']
     return t
 
@@ -87,7 +87,7 @@ HCOL = {str(su.cell(5, c).value).replace('\n', '').replace('(截至截止日)', 
 MAPU = {'开票额(该单位开出)': 'sale', '应扣管理费': 'mfee', '应到成本票': 'due', '已收成本票': 'done',
         '业主已付给挂靠单位': 'a_got', '欠业主未付款余额': 'a_left', '应收挂靠方金额': 'b_ar',
         '管理费已结算': 'b_fee', '扣质保金': 'b_bond', '挂靠单位已转我方': 'b_got',
-        '应收挂靠方余额': 'b_left', '挂靠单位代收未转': 'transit', '还差成本票': 'gap'}
+        '应收挂靠方余额': 'b_left', '代收未转(含对方扣的管理费质保金)': 'transit', '还差成本票': 'gap'}
 for k in MAPU: assert k in HCOL, ('单位汇总缺列', k)
 UT = {}
 for r in range(7, 47):

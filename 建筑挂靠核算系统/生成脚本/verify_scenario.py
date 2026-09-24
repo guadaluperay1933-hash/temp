@@ -31,10 +31,23 @@ for rr, vals in ((R1, [dt.date(2026, 9, 24), 'A045', '成本票', '康欣', '金
     for c, v in zip('BCDEFGHIJ', vals):
         if v is not None: wf[f'{c}{rr}'] = v
 wf[f'AK{R1}'] = '否'
+# 客户 9.23 原来的错录法：开票录成挂靠代收、成本票录成我方收款；还有停用编号
+R4, R5, R6 = R3 + 1, R3 + 2, R3 + 3
+for rr, vals in ((R4, [dt.date(2026, 9, 24), 'A056', '挂靠代收', '华城', '民能', '3%专票', '劳务票', '测试：错录成挂靠代收', 1000, 0.02]),
+                 (R5, [dt.date(2026, 9, 24), 'A056', '我方收款', '泓普', '华城', '3%专票', '劳务票', '测试：错录成我方收款', 980]),
+                 (R6, [dt.date(2026, 9, 24), 'A041', '销项开票', '华城', '民能', '3%专票', '劳务票', '测试：停用编号', 100, 0.02, 0, '扣管理费'])):
+    for c, v in zip('BCDEFGHIJKLM', vals):
+        if v is not None: wf[f'{c}{rr}'] = v
 wj = wb['资金日记账']
 JR = last_row(base['资金日记账'], 'B', 6)
 for c, v in zip('BIJKL', [dt.date(2026, 9, 30), '本月合计', '现金', 8000, 1433]):
     wj[f'{c}{JR}'] = v
+# 项目实际支出：材料费 1000、退款 200、工程回款 462.92（不能冲减）
+for k, vals in enumerate([(dt.date(2026, 9, 25), 'A056', '材料费', '测试材料', '现金', None, 1000),
+                          (dt.date(2026, 9, 26), 'A056', '材料费', '测试退款', '现金', 200, None),
+                          (dt.date(2026, 9, 27), 'A056', '工程回款', '测试回款', '现金', 462.92, None)]):
+    for c, v in zip('BEFIJKL', vals):
+        if v is not None: wj[f'{c}{JR + 1 + k}'] = v
 # 期间：康欣明细截止 2026-07-31；金沁明细起 2026-07-01；单位汇总 2026 年
 wb['康欣明细']['H3'] = dt.date(2026, 7, 31)
 wb['金沁明细']['F3'] = dt.date(2026, 7, 1)
@@ -71,13 +84,22 @@ chk('单位汇总 康欣 已收成本票 不变（2026 年）', N(su1[f'H{urow(s
     0 - done2025('康欣'))
 chk('单位汇总 安锐 业主已付 +200', N(su1[f'M{urow(su1, "安锐")}'].value) - N(su0[f'M{urow(su0, "安锐")}'].value), 200)
 chk('单位汇总 德誉嘉 业主已付 不变', N(su1[f'M{urow(su1, "德誉嘉")}'].value) - N(su0[f'M{urow(su0, "德誉嘉")}'].value), 0)
+chk('错录：挂靠单位开给业主录成挂靠代收', f[f'O{R4}'].value, '挂靠单位开给业主的票请选「销项开票」')
+chk('错录：泓普开给华城录成我方收款', f[f'O{R5}'].value, '泓普开给挂靠单位的票请选「成本票」')
+chk('停用编号 A041', f[f'O{R6}'].value, '项目编号已停用（看项目档案备注，换成并入的那个编号）')
+wp = v['项目利润']
+pr = next(rr for rr in range(9, 320) if wp[f'A{rr}'].value == 'A056')
+chk('项目利润 A056 项目实际支出＝1000−200（回款不冲）', wp[f'M{pr}'].value, 800)
+we = v['费用统计']
+er = next(rr for rr in range(7, 320) if we[f'O{rr}'].value == 'A056')
+chk('费用统计 A056 项目实际支出同口径', we[f'Q{er}'].value, 800)
 print('④ 日记账本月合计行')
 chk('日记账 计入', v['资金日记账'][f'X{JR}'].value, 0)
 chk('日记账 校验', v['资金日记账'][f'Y{JR}'].value, '√ 合计/结转行（不计入）')
 d21 = [c.value for row in v['首页'].iter_rows(min_row=18, max_row=30) for c in row
        if isinstance(c.value, str) and c.value.startswith(('✓', '✗')) and '笔，科目' in c.value]
 chk('首页 日记账校验 仍通过', (d21 or [''])[0][:1], '✓')
-chk('现金期末余额不变', v['资金日记账']['S6'].value, base['资金日记账']['S6'].value)
+chk('现金期末余额（合计行不计入，加测试 3 笔）', v['资金日记账']['S6'].value, N(base['资金日记账']['S6'].value) - 1000 + 200 + 462.92)
 print('⑤ 期间筛选：余额＝截至截止日期')
 def bal_upto(ws_base, end, plus, minus):
     """在全期间的基线明细上，按日期把截止日期之前的行加起来（基线没有筛选）"""
