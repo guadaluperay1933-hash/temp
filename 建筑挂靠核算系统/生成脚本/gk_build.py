@@ -167,7 +167,8 @@ def col_idx(letters):
 
 # ============================================================ 筛选带（所有查询表通用）
 def filter_band(ws, lastcol, unit_default=None,
-                note='留空＝全部期间；填了年度就按整年取数，另填起止日期则以起止为准'):
+                note='留空＝全部期间；填了年度就按整年取数，另填起止日期则以起止为准；余额类的列按截止日期算',
+                cnt_label='业务流水', cnt_rng=None):
     """在第 3 行画统一的「年度 / 起止日期」筛选带，第 4 行（隐藏）放解析后的取数区间。
        返回 (起单元格, 止单元格)，公式里直接当绝对引用用。"""
     if unit_default is not None:
@@ -189,7 +190,7 @@ def filter_band(ws, lastcol, unit_default=None,
         put(ws, f'{L(ci)}3', None, font=F_TOT, fill=FILL_CHK, align=CL)
     ws.merge_cells(f'{disp_c}3:{lastcol}3')
     put(ws, f'{disp_c}3',
-        f'=IF(AND({y}="",{s_}="",{e_}=""),"全部期间（业务流水共 "&COUNT({QF}!$B${F0}:$B${F1})&" 笔）",'
+        f'=IF(AND({y}="",{s_}="",{e_}=""),"全部期间（{cnt_label}共 "&COUNT({cnt_rng or f"{QF}!$B${F0}:$B${F1}"})&" 笔）",'
         f'TEXT($A$4,"yyyy-mm-dd")&"  至  "&TEXT($B$4,"yyyy-mm-dd"))',
         font=F_TOT, fill=FILL_CHK, align=CL)
     put(ws, 'A4', f'=IF({s_}<>"",{s_},IF({y}<>"",DATE({y},1,1),DATE(1900,1,1)))', font=F_NOTE, fmt=DATE)
@@ -253,10 +254,10 @@ dv_list(ws, f'L{U0}:L{U1}', '"是,否"')
 dv_list(ws, f'M{U0}:M{U1}', '"正常,停用"')
 put(ws, f'A{U1+2}',
     '管理费率 / 返现率已取消：请到【业务流水】的「管理费率」「返现率」两列逐笔填（淡黄色格子）。'
-    '历史 3xx 行已按你那份《对账明细》逐笔写死，一分没动。　　'
+    '历史行已按你那份《对账明细》逐笔写死。　　'
     '这里的税率参数只驱动【业务流水】最右边那一列「税费参考试算」，供录入时对照，不参与任何汇总：'
     '税差法＝上游销项税−我方成本票进项税；全额销项法＝开票额÷(1+上游税率)×上游税率；'
-    '预征率法＝开票额÷(1+上游税率)×预征率。真正入账的税费在【业务流水】O~R 四列按实际逐笔录。',
+    '预征率法＝开票额÷(1+上游税率)×预征率。真正入账的税费在【业务流水】P~S 四列（税费录入区）按实际逐笔录。',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells(f'A{U1+2}:N{U1+2}')
 ws.freeze_panes = 'B6'; page(ws, titles='5:5')
@@ -393,7 +394,12 @@ for src, kind, amt, to, why in [
     ('华城!6', '成本票', 80000, 'A001', '原表项目名把 10kV 写成了 11kV，是 A001 平双线同一个项目'),
     ('华城!26', '成本票', 5744.48, 'A037', '金额等于第 20 行高丰3社的应开成本票，上一版误挂 A036'),
     ('华城!27', '成本票', 6045.34, 'A038', '原表项目名少了个「个」字，是 A038 同一个项目'),
-    ('华城!29', '成本票', 3229.84, 'A041', '平滩农光互补 219kV/220kV 原表写法不一，跟第 28 行开票挂同一个项目'),
+    ('华城!28', '销项开票', 3295.75, 'A042', '原表项目名把 220kV 写成了 219kV（摘要写的是 220kV），并回 A042'),
+    ('华城!28', '管理费结算', 65.91, 'A042', '同上'),
+    ('安锐!15', '成本票', 25682.49, 'A004', '金额＋第 20 行＝26,493.52，正好是第 7 行池塘4社的应收成本票，原表摘要把项目写反了（原挂 A005）'),
+    ('安锐!20', '成本票', 811.03, 'A004', '同上'),
+    ('安锐!16', '成本票', 25532.51, 'A005', '金额＋第 21 行＝26,338.80，正好是第 8 行团山的应收成本票，原表摘要把项目写反了（原挂 A004）'),
+    ('安锐!21', '成本票', 806.29, 'A005', '同上'),
     ('金沁!20', '挂靠代收', 30000, 'A032', '金沁的金湖东西线是 A032，上一版误挂 A008（德誉嘉那条链）'),
     ('金沁!20', '我方收款', 30000, 'A032', '同上'),
     ('金沁!21', '挂靠代收', 60000, 'A032', '同上'), ('金沁!21', '我方收款', 60000, 'A032', '同上'),
@@ -402,7 +408,6 @@ for src, kind, amt, to, why in [
     ('金沁!25', '挂靠代收', 32000, 'A032', '同上'), ('金沁!25', '我方收款', 32000, 'A032', '同上'),
     ('金沁!41', '已交税', 144.04, 'A047', '摘要写的是群益7社，上一版误挂 A045'),
     ('金沁!37', '已交税', 1.71, 'A048', '摘要写的是平镇线新桥社，上一版挂在 A049'),
-    ('金沁!38', '已交税', 3.59, 'A047', '摘要写的是平双线群益7社，上一版挂在 A049'),
     ('金沁!39', '已交税', 3.8, 'A045', '摘要写的是侣新线铜安1社，上一版挂在 A049'),
     ('安锐!10', '销项开票', 5330.51, 'A007', '安锐开给德誉嘉的平滩所何银强，是德誉嘉那条链 A007，上一版误挂 A043（金沁链）'),
     ('安锐!12', '挂靠代收', 5330.51, 'A007', '同上')]:
@@ -416,8 +421,8 @@ _log('安锐', '安锐!12', '挂靠代收 付款方 民能 → 德誉嘉', 5330.
 #    （金额＝第 18 行许家3社的应开成本票 3,725.89；摘要是从金沁表第 25 行误抄过来的）
 _e24 = _one('华城!24', '销项开票', 3725.89)
 _fix(_e24, '原表摘要误抄了金沁表「民能代付工资」，金额＝第 18 行许家3社应开成本票，改为泓普开给华城的成本票',
-     kind='成本票', payer='泓普', payee='华城', code='A035', itype='劳务票',
-     memo='2026.7.28泓普开票（劳务）到华城：永嘉所许家3社（原表摘要误抄成「民能代付工资：金湖东西电缆改造（土建）」）')
+     kind='成本票', payer='泓普', payee='华城', code='A035', itype='劳务票', date='2026-07-24',
+     memo='2026.7.24泓普开票（劳务）到华城：永嘉所许家3社（原表摘要误抄成「2026.7.28民能代付工资：金湖东西电缆改造（土建）」，日期按同一批成本票改成 7.24）')
 _log('华城', '华城!24', '销项开票 民能→华城 改为 成本票 泓普→华城（A035 许家3社）', 3725.89)
 # ⑥ 批量结算的管理费 / 税费按项目拆开（原表一格记的是好几个项目合起来的数，只挂在最后一个项目上）
 def _split(src, kind, amt, parts, why):
@@ -444,6 +449,34 @@ for sh, a, b, src, amt in [('德誉嘉', 5, 10, '德誉嘉!10', 22320.78), ('德
                            ('迅驰', 48, 53, '迅驰!54', 706.05), ('华城', 18, 22, '华城!22', 488.78),
                            ('金沁', 30, 34, '金沁!35', 3528.48), ('安锐', 5, 9, '安锐!9', 2728.39)]:
     _split(src, '管理费结算', amt, _fee_parts(sh, a, b), '结算的管理费（＝各项目应扣管理费之和）')
+def _tax(x): return sum((x.get(k) or 0) for k in ('tax_v', 'tax_s', 'tax_y', 'tax_i'))
+def _tax_parts(sh, a, b):
+    return [(_code(x), _tax(x)) for x in EV if _S(x).split('!')[0] == sh and x['kind'] == '销项开票'
+            and a <= int(_S(x).split('!')[1]) <= b]
+for sh, a, b, src, amt in [('康欣', 5, 9, '康欣!9', 7443.98), ('湖南锦泰', 5, 7, '湖南锦泰!9', 16389.36)]:
+    _split(src, '管理费结算', amt, _fee_parts(sh, a, b), '结算的管理费（＝各项目应扣管理费之和）')
+_split('康欣!10', '已交税', 12213.85, _tax_parts('康欣', 5, 9), '交的税（＝第 5~9 行应扣税费之和）')
+_split('迅驰!11', '已交税', 6953.21, _tax_parts('迅驰', 5, 10), '交的税（＝第 5~10 行应扣税费之和）')
+_split('迅驰!54', '已交税', 1679.77, _tax_parts('迅驰', 48, 53) + [(_code(_one('迅驰!67', '销项开票')), 0)],
+       '交的税（第 48~53 行应扣税费，余下 589.83＝少盘线第 67 行税费 216.53＋7.24 退回的 373.30）')
+_j38 = [(_code(_one('金沁!31', '销项开票')), 3.59 * _one('金沁!31', '销项开票')['amt']
+         / (_one('金沁!31', '销项开票')['amt'] + _one('金沁!32', '销项开票')['amt'])),
+        (_code(_one('金沁!32', '销项开票')), 0)]
+_split('金沁!38', '已交税', 3.59, _j38, '交的印花税（摘要写了铜安9社和群益7社两个项目，按开票额分）')
+for src, kind, amt in [('金沁!35', '成本票', 30.84), ('金沁!35', '我方收款', 30.8), ('金沁!45', '已交税', 30.84)]:
+    _fix(_one(src, kind, amt), '这一笔是第 30~34 行 5 个项目合起来的税差（摘要「印花税差额30.8」），金额太小没拆，只挂在 A049')
+# 康欣原表 H68「未开票按3%扣点子」一共 9 笔：上面补录了 6 笔，原来已经在系统里的 3 笔也标成「不开票」
+for src, amt in (('康欣!21', 55907.06), ('康欣!33', 12200), ('康欣!50', 66500)):
+    e = _one(src, '成本票', amt)
+    _fix(e, '原表 H68「未开票按3%扣点子」9 笔之一，发票性质改为「不开票」', inv='不开票',
+         memo=e['memo'] + ('' if '扣点' in e['memo'] else '｜未开票按3%扣点子（不提供成本票）'))
+_log('康欣', '康欣!21、33、50', '成本票 55,907.06 / 12,200 / 66,500 发票性质改「不开票」（原表 H68 扣点清单）', 134607.06)
+# 园区光伏电力新建：原表康欣 B50 把「泓普7W」写成「泓普6W」，被拆成 A054、A044 两个编号，并回 A044
+for src in ('康欣!50', '康欣!52', '康欣!53'):
+    for e in _evs(src):
+        if _code(e) == 'A054':
+            _fix(e, '原表项目名把「泓普7W」写成了「泓普6W」，跟金沁那边是同一个项目，并回 A044（原挂 A054）', code='A044')
+_log('康欣', '康欣!50、52、53', '园区光伏电力新建 A054 → A044（项目名笔误）', 70000)
 _split('安锐!11', '已交税', 332.72,
        [(_code(x), (x.get('tax_v') or 0) + (x.get('tax_s') or 0) + (x.get('tax_y') or 0) + (x.get('tax_i') or 0))
         for x in EV if _S(x).split('!')[0] == '安锐' and x['kind'] == '销项开票' and 5 <= int(_S(x).split('!')[1]) <= 9],
@@ -456,6 +489,16 @@ _add('康欣!58', '2026-07-15', '代垫应收', '康欣', '泓普', 408.77, _one
 _log('康欣', '康欣!58', '补录 代垫应收 408.77（原表手填，请核实）', 408.77)
 # ⑧ 康欣表第 67 行（稷博汇）管理费率 0.019999 是从 71.40 倒推出来的，改成 2%（金额不变）
 _fix(_one('康欣!67', '销项开票'), '管理费率 0.019999 → 2%（原来是倒推出来的，金额不变）', mrate=0.02)
+for code, to, why in (('A034', 'A001', '原表项目名把 10kV 写成了 11kV'), ('A040', 'A038', '原表项目名少了个「个」字'),
+                      ('A041', 'A042', '原表项目名把 220kV 写成了 219kV'), ('A054', 'A044', '原表项目名把「泓普7W」写成了「泓普6W」')):
+    d = [x for x in PROJ_ROWS if x['code'] == code][0]
+    d['memo'] = f'9.24 停用：{why}，跟 {to} 是同一个项目，业务已全部并入 {to}，这个编号不要再用'
+    d['status'] = '暂停'
+    d['short'] = d['short'] + '·停用'
+for d in PROJ_ROWS:
+    if d['code'] == 'A001': d['short'] = '平双线'
+    if d['code'] == 'A035': d['l2'] = ''
+    if d['code'] == 'A007': d['l2'] = '安锐'
 EV.sort(key=lambda e: (e['date'], e['src']))
 PROJ_BY_CODE = {d['code']: d for d in PROJ_ROWS}
 PCODE = {d['name']: d['code'] for d in PROJ_ROWS if d['name']}
@@ -475,7 +518,7 @@ for i in range(P1 - P0 + 1):
         ws[f'I{r}'] = d['mine']
         if d['l1']: ws[f'G{r}'] = d['l1']
         if d['l2']: ws[f'H{r}'] = d['l2']
-        ws[f'N{r}'] = '在建'
+        ws[f'N{r}'] = d.get('status', '在建')
         if d['memo']: ws[f'V{r}'] = d['memo']
         for c, v in d.get('extra', {}).items(): ws[f'{c}{r}'] = v
     put(ws, f'Q{r}', f'=IF($A{r}="","",IF(N($O{r})=0,"",ROUND(N($O{r})-N($P{r}),2)))',
@@ -638,10 +681,16 @@ for r in range(F0, F1 + 1):
         font=F_NOTE, fill=FILL_AUTO)
     # 归属单位表＝这一笔算在哪家挂靠单位的对账表上。历史行照原表的来源表；
     # 新录的行自动认开票方（开票方不是挂靠单位就认收票方）
+    # 9.24：按业务类型定方向 —— 成本票、挂靠代收、业主扣质保金、管理费结算、工资扣抵是「收的那一家」的事，
+    # 先认收票/收款方；其余（开票、转我方、代垫、交税…）先认开票/付款方。
+    # 原来一律先认开票/付款方，康欣开给金沁的成本票、上一层挂靠单位付给下一层的钱都会记到付钱那一家头上
+    _eh = f'{lk(f"$E{r}", U_NAME, U_TYPE)}="挂靠单位"'
+    _fh = f'{lk(f"$F{r}", U_NAME, U_TYPE)}="挂靠单位"'
     put(ws, f'{C_["ubel"]}{r}',
         f'=IF(${C_["src"]}{r}<>"",${C_["src"]}{r},'
-        f'IF({lk(f"$E{r}", U_NAME, U_TYPE)}="挂靠单位",$E{r},'
-        f'IF({lk(f"$F{r}", U_NAME, U_TYPE)}="挂靠单位",$F{r},"")))',
+        f'IF(OR($D{r}="成本票",$D{r}="挂靠代收",$D{r}="业主扣质保金",$D{r}="管理费结算",$D{r}="工资扣抵"),'
+        f'IF({_fh},$F{r},IF({_eh},$E{r},"")),'
+        f'IF({_eh},$E{r},IF({_fh},$F{r},""))))',
         font=F_NOTE, fill=FILL_AUTO)
     # 取数键：归属单位#该单位第几笔 —— 8 张单位竖版明细靠它一行一行取数。
     # 用「归属单位表」而不是「来源表」：来源表只有历史行有值，你新录的行来源表是空的，
@@ -658,7 +707,8 @@ for r in range(F0, F1 + 1):
         f'COUNTIF(${C_["ubel"]}${F0}:${C_["ubel"]}{r},${C_["ubel"]}{r}))',
         font=F_NOTE, fill=FILL_AUTO)
     put(ws, f'{C_["chk"]}{r}',
-        f'=IF($B{r}="","",'
+        f'=IF(AND($B{r}="",$D{r}="",${A_}{r}=""),"",'
+        f'IF($B{r}="","未填日期",'
         f'IF(NOT(ISNUMBER($B{r})),"日期格式不对",'
         f'IF($D{r}="","未选业务类型",'
         f'IF(AND($C{r}="",OR($D{r}="销项开票",$D{r}="成本票",$D{r}="工资扣抵",'
@@ -673,7 +723,12 @@ for r in range(F0, F1 + 1):
         f'IF(AND($D{r}="销项开票",${FG}{r}=""),"没选计费方式",'
         f'IF(AND($D{r}="销项开票",${FG}{r}="扣管理费",ROUND(N(${R_}{r}),6)=0),'
         f'"选了扣管理费但费率是 0",'
-        f'IF(AND($D{r}="销项开票",${C_["tier"]}{r}="—"),"链条待确认","√"))))))))))))))',
+        f'IF(AND(${C_["ubel"]}{r}="",OR($D{r}="销项开票",$D{r}="成本票",$D{r}="挂靠代收",$D{r}="我方收款",'
+        f'$D{r}="管理费结算",$D{r}="扣质保金",$D{r}="业主扣质保金",$D{r}="代垫应收",$D{r}="已交税",$D{r}="工资扣抵")),'
+        f'"两边都不是挂靠单位，算不到哪家头上",'
+        f'IF(AND($D{r}="销项开票",${C_["ocol"]}{r}="已开成本票",${FG}{r}<>"不回成本票"),'
+        f'"这是收票方账上的镜像行，计费方式只能是不回成本票",'
+        f'IF(AND($D{r}="销项开票",${C_["tier"]}{r}="—"),"链条待确认","√")))))))))))))))))',
         font=F_TXT, fill=FILL_CHK)
     ws.row_dimensions[r].height = 16
 
@@ -716,7 +771,8 @@ for i, e in enumerate(EV):
         if e.get('from_cost_col'):
             # 这一行是从原表「已开成本票」列还原出来的票，本身不产生「我方应回成本票」的义务
             ws[f'{FG}{r}'] = '不回成本票'
-            ws[f'{C_["note"]}{r}'] = '历史导入·原表「已开成本票」列还原；不另生成应回成本票'
+            ws[f'{C_["note"]}{r}'] = ('历史导入·原表「已开成本票」列还原；不另生成应回成本票'
+                                       + ('｜' + e['note9'] if e.get('note9') else ''))
         elif abs(e.get('mrate', 0.0)) < 1e-9:
             # 原表这一笔一分管理费没扣：要么只过票不收费，要么合伙内部连成本票都不用回
             ws[f'{FG}{r}'] = '不回成本票' if abs(float(e.get('cost_due') or 0)) < 0.005 else '不扣管理费'
@@ -766,12 +822,16 @@ _rr = _find('康欣', 35, '挂靠代收', 16500)          # 你把付款方从�
 ws[f'E{_rr}'] = '铜梁供电'
 ws[f'{C_["note"]}{_rr}'] = '9.24 照回传版：付款方由民能改为铜梁供电'
 PATCH_ROWS = {'payer': _rr}
-_rr = _find('康欣', 9, '管理费结算', 7443.98)       # 回传版把这一行删了，康欣管理费就少了 7,443.98 —— 恢复
-ws[f'{C_["note"]}{_rr}'] = '9.24 恢复：回传版删掉了这一行（它不是重复，是同一张原表行里的管理费结算）'
-PATCH_ROWS['kx_fee'] = _rr
+# 回传版把康欣第 9 行的管理费结算 7,443.98 删了（它不是重复，是同一张原表行里的管理费结算）—— 恢复，并按项目拆成 5 行
+_kx9 = [rr for rr in range(F0, r) if ws[f'{C_["src"]}{rr}'].value == '康欣' and ws[f'{C_["srow"]}{rr}'].value == 9
+        and ws[f'D{rr}'].value == '管理费结算']
+assert abs(sum(ws[f'{A_}{rr}'].value for rr in _kx9) - 7443.98) < 0.005, _kx9
+for rr in _kx9:
+    ws[f'{C_["note"]}{rr}'] = '9.24 恢复：回传版把这笔管理费结算 7,443.98 删了（不是重复），已恢复｜' + str(ws[f'{C_["note"]}{rr}'].value)
+PATCH_ROWS['kx_fee'] = _kx9[0]
 _rr = _find('德誉嘉', 47, '销项开票', 1622.53)      # 这一行保持原样（7.22 那张票确实开过），红冲另起两行
 PATCH_ROWS['dyj_old'] = _rr
-ws[f'{C_["note"]}{_rr}'] = '9.24：这张票 9.20 已红冲、重开 1,662.53（见业务流水最下面两行），本行保持原样不要改'
+ws[f'{C_["note"]}{_rr}'] = '9.24：按你说的「红冲更正发票」处理 —— 这张票 9.20 已红冲、重开 1,662.53（见日期 2026-09-20 的那两行），本行保持原样不要改'
 _dyj_rate = ws[f'{R_}{_rr}'].value
 NEW924 = []
 def _new(date, code, kind, payer, payee, inv, itype, memo, amt, rate=None, reb=None, flag=None,
@@ -899,21 +959,26 @@ J_TOT = JA1 + 1
 put(ws, f'O{J_TOT}', '合  计', font=F_TOT, fill=FILL_TOT)
 for c in 'PQRS':
     put(ws, f'{c}{J_TOT}', f'=SUM({c}{JA0}:{c}{JA1})', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-put(ws, f'O{J_TOT+1}', f'=IF(ROUND(SUMIFS({JCOL("K")},{JCOL("X")},1)-$Q${J_TOT},2)'
-                       f'+ROUND(SUMIFS({JCOL("L")},{JCOL("X")},1)-$R${J_TOT},2)=0,'
-                       f'"✓ 每一笔都落到了上面的科目里",'
-                       f'"⚠ 有 "&COUNTIF({JCOL("Y")},"科目不在基础设置里")&" 行的科目不在上面清单里，余额没算进去")',
+_dup = f'SUMPRODUCT(({ACC_O}<>"")*(COUNTIF({ACC_O},{ACC_O}&"")>1))'
+put(ws, f'O{J_TOT+1}', f'=IF({_dup}>0,"⚠ 科目清单里有重名的，余额会重复算，请删掉一个",'
+                       f'IF(ROUND(SUMIFS({JCOL("K")},{JCOL("X")},1)-$Q${J_TOT},2)'
+                       f'+ROUND(SUMIFS({JCOL("L")},{JCOL("X")},1)-$R${J_TOT},2)<>0,'
+                       f'"⚠ 有 "&COUNTIF({JCOL("Y")},"科目不在基础设置里")&" 行的科目不在上面清单里，余额没算进去",'
+                       f'IF(COUNT({ACC_P})=0,"⚠ P 列期初余额还没填：上面的余额只是本表录入以来的净发生额，不是账上真实余额",'
+                       f'"✓ 每一笔都落到了上面的科目里")))',
     font=F_TOT, fill=FILL_CHK, align=CL)
-ws.merge_cells(f'O{J_TOT+1}:S{J_TOT+1}')
-put(ws, f'O{J_TOT+2}', '要加科目（比如新开一个银行户），在 O 列空格里填上名字、P 列填期初，'
-                       'J 列的下拉马上就多出来。科目名字要跟出纳那本账写的一字不差。',
+put(ws, f'O{J_TOT+2}', '要加科目：在 O 列空格里填名字、P 列填期初（出纳账「期初余额表」里的数），J 列下拉马上多出来。',
     font=F_NOTE, align=CL, border=None)
-ws.merge_cells(f'O{J_TOT+2}:S{J_TOT+3}')
+put(ws, f'O{J_TOT+3}', '科目名字要跟出纳那本账写的一字不差，也不要重名。', font=F_NOTE, align=CL, border=None)
+_dvo = DataValidation(type='custom', formula1=f'COUNTIF($O${JA0}:$O${JA1},O{JA0})=1', allow_blank=True,
+                      showErrorMessage=True, errorStyle='stop', errorTitle='科目重名',
+                      error='基础设置里已经有这个科目了，同一个科目只能写一次')
+ws.add_data_validation(_dvo); _dvo.add(f'O{JA0}:O{JA1}')
 SUBTOT = ['本月合计', '本年累计', '过次页', '承前页', '上年结转']
 for r in range(JR0, JR1 + 1):
     for c, _ in JH_IN:
         put(ws, f'{c}{r}', None, font=F_J, align=CL if c in 'IM' else C,
-            fmt=J_DATE if c == 'B' else (J_MONEY if c in 'KL' else None))
+            fmt=J_DATE if c == 'B' else (J_MONEY if c in 'KL' else ('@' if c in 'DEFGHI' else None)))
     _clean = f'SUBSTITUTE(SUBSTITUTE($I{r}," ",""),"　","")'
     _sub = 'OR(' + ','.join(f'{_clean}="{t}"' for t in SUBTOT) + ')'
     put(ws, f'X{r}', f'=IF(AND(ISNUMBER($B{r}),$J{r}<>"",OR(N($K{r})<>0,N($L{r})<>0),NOT({_sub})),1,0)',
@@ -927,13 +992,14 @@ for r in range(JR0, JR1 + 1):
     put(ws, f'W{r}', f'=IF(ISNUMBER($B{r}),YEAR($B{r}),"")', font=F_LINK, fill=FILL_AUTO)
     put(ws, f'Y{r}',
         f'=IF(AND($B{r}="",$J{r}="",N($K{r})=0,N($L{r})=0),"",'
-        f'IF({_sub},"合计/结转行·不计入",'
+        f'IF({_sub},"√ 合计/结转行（不计入）",'
         f'IF(NOT(ISNUMBER($B{r})),"日期格式不对",'
         f'IF($J{r}="","未填科目",'
         f'IF(ISNA(MATCH($J{r},{ACC_O},0)),"科目不在基础设置里",'
+        f'IF(OR(AND($K{r}<>"",NOT(ISNUMBER($K{r}))),AND($L{r}<>"",NOT(ISNUMBER($L{r})))),"金额是文字，请改成数字",'
         f'IF(AND(N($K{r})=0,N($L{r})=0),"借贷都为空",'
         f'IF(AND(N($K{r})<>0,N($L{r})<>0),"借方贷方不能同时填",'
-        f'IF(AND($E{r}<>"",LEFT($V{r},1)="⚠"),"项目编号不存在","√"))))))))',
+        f'IF(AND($E{r}<>"",LEFT($V{r},1)="⚠"),"项目编号不存在","√")))))))))',
         font=F_TXT, fill=FILL_CHK)
 for i, row in enumerate(JOUR_ROWS):
     r = JR0 + i
@@ -941,13 +1007,15 @@ for i, row in enumerate(JOUR_ROWS):
         ws[f'{c}{r}'] = v
 dv_list(ws, f'J{JR0}:J{JR1}', f'={ACC_O}', msg='科目必须是右边「基础设置」里有的，要加科目先在 O 列加')
 ws.conditional_formatting.add(f'Y{JR0}:Y{JR1}',
-    FormulaRule(formula=[f'AND($Y{JR0}<>"",$Y{JR0}<>"√")'], fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
+    FormulaRule(formula=[f'AND($Y{JR0}<>"",LEFT($Y{JR0},1)<>"√")'], fill=FILL_WARN, font=Font(color='9C0006', bold=True)))
+ws.conditional_formatting.add(f'B{JR0}:M{JR1}',
+    FormulaRule(formula=[f'LEFT($Y{JR0},2)="√ "'], font=Font(color='808080', italic=True)))
 ws.conditional_formatting.add(f'U{JR0}:U{JR1}',
     FormulaRule(formula=[f'AND(ISNUMBER($U{JR0}),$U{JR0}<0)'], font=Font(color='C00000', bold=True)))
-ws.auto_filter.ref = f'B5:Y{JR1}'
+# 筛选只包出纳那 12 列：右边的科目余额块和公式列不跟着排序、不会被打乱
+ws.auto_filter.ref = f'B5:M{JR1}'
 ws.freeze_panes = f'A{JR0}'
 page(ws, titles='4:5')
-ws.print_area = f'$B$1:$M${JR1}'
 print(f'  ✓ 资金日记账（出纳日记账格式；科目 {len(JOUR_ACCTS)} 个：{"、".join(JOUR_ACCTS)}；'
       f'9 月 {len(JOUR_ROWS)} 笔，容量 {JR1-JR0+1} 行）')
 
@@ -993,10 +1061,10 @@ def agg(val, side, kind, uref, pref=None, dr=None, cls=None, last=False, top=Fal
     return f'SUMIFS({val},{KD},"{kind}"{ex}{tail})'
 
 COLS_U = ['开票额\n(该单位开出)','应扣管理费','应到成本票','其中·按净额\n(开票额−管理费)','其中·按全额\n(不扣管理费)',
-          '已收成本票','还差成本票','应提税费','已交税','欠税未交',
-          '业主已付给\n挂靠单位','欠业主\n未付款余额',
-          '应收挂靠方\n金额','管理费\n已结算','扣质保金','挂靠单位\n已转我方','应收挂靠方\n余额',
-          '挂靠单位\n代收未转']
+          '已收成本票','还差成本票\n(截至截止日)','应提税费','已交税','欠税未交\n(截至截止日)',
+          '业主已付给\n挂靠单位','欠业主\n未付款余额\n(截至截止日)',
+          '应收挂靠方\n金额','管理费\n已结算','扣质保金','挂靠单位\n已转我方','应收挂靠方\n余额\n(截至截止日)',
+          '挂靠单位\n代收未转\n(截至截止日)']
 SUM_LAST = L(2 + len(COLS_U))          # 最后一个金额列 = T
 BIZ = L(3 + len(COLS_U))               # 有无业务 = U
 # 列字母（detail_cols 和首页卡片按名字取，别再写死字母）
@@ -1059,22 +1127,41 @@ def hide_tail(ws, r0, r1, keep_rows, filter_col=None, ref=None, spare=SPARE, val
         if filter_col is not None:
             ws.auto_filter.add_filter_column(filter_col, list(vals), blank=False)
 
-def detail_cols(ws, r, uref, pref, dr, last_col_letter, biz_col):
-    """一行 18 列的通用汇总公式 + 有无业务"""
+def bal_formulas(uref, pref, end, owed_all=False):
+    """余额列：截至截止日期的余额（从第一笔累计到截止日，不管起始日期），
+       不是期间内发生额相减 —— 否则 2025 年开票、2026 年回款的会算出负数"""
+    drE = ('DATE(1900,1,1)', end)
+    g = lambda v, s_, k, **kw: agg(v, s_, k, uref, pref, drE, **kw)
+    dE = f',{FB},"<="&{end}'
+    pE = f',{KC},{pref}' if pref else ''
+    sale = g(FI, 'U', '销项开票', ocol='销售开票金额')
+    got = g(FI, 'U', '挂靠代收'); ours = g(FI, 'U', '我方收款')
+    fee = g(FI, 'U', '管理费结算'); bond = g(FI, 'U', '扣质保金')
+    b_ar = (f'{sale}-{g(FI, "U", "销项开票", ocol="销售开票金额", fee="不回成本票")}+{g(FI, "U", "代垫应收")}')
+    done = f'SUMIFS({FI},{FUBEL},{uref},{FOCOL},"已开成本票"{pE}{dE})'
+    tax = (f'SUMIFS({FZ},{FUBEL},{uref}{pE}{dE})' if owed_all else g(FZ, 'U', '销项开票'))
+    return dict(gap=f'{g(FS, "U", "销项开票")}-{done}',
+                owed=f'{tax}-{g(FI, "U", "已交税")}',
+                a_left=f'{sale}-{got}',
+                b_left=f'{b_ar}-{fee}-{bond}-{ours}',
+                transit=f'{got}-{ours}-{fee}-{bond}')
+
+def detail_cols(ws, r, uref, pref, dr, last_col_letter, biz_col, owed_all=False):
+    """一行 18 列的通用汇总公式 + 有无业务：发生额按期间取；余额列（还差成本票、欠税未交、
+       欠业主未付款余额、应收挂靠方余额、代收未转）按截止日期取"""
     for i, f in enumerate(summary_formulas(uref, pref, dr)):
         if f is None: continue
         put(ws, f'{L(3+i)}{r}', f'=IF($A{r}="","",{f})', font=F_LINK, fmt=MONEY)
     c = SU
-    put(ws, f'{c["gap"]}{r}', f'=IF($A{r}="","",${c["due"]}{r}-${c["done"]}{r})', font=F_TXT, fmt=MONEY)
-    put(ws, f'{c["owed"]}{r}', f'=IF($A{r}="","",${c["tax"]}{r}-${c["paid"]}{r})', font=F_TXT, fmt=MONEY)
-    put(ws, f'{c["a_left"]}{r}', f'=IF($A{r}="","",ROUND(${c["sale"]}{r}-${c["a_got"]}{r},2))',
+    bf = bal_formulas(uref, pref, dr[1], owed_all)
+    put(ws, f'{c["gap"]}{r}', f'=IF($A{r}="","",ROUND({bf["gap"]},2))', font=F_TXT, fmt=MONEY)
+    put(ws, f'{c["owed"]}{r}', f'=IF($A{r}="","",ROUND({bf["owed"]},2))', font=F_TXT, fmt=MONEY)
+    put(ws, f'{c["a_left"]}{r}', f'=IF($A{r}="","",ROUND({bf["a_left"]},2))',
         font=F_TOT, fill=PatternFill('solid', fgColor='FCE4D6'), fmt=MONEY)
-    put(ws, f'{c["b_left"]}{r}', f'=IF($A{r}="","",ROUND(${c["b_ar"]}{r}-${c["b_fee"]}{r}'
-                                 f'-${c["b_bond"]}{r}-${c["b_got"]}{r},2))',
+    put(ws, f'{c["b_left"]}{r}', f'=IF($A{r}="","",ROUND({bf["b_left"]},2))',
         font=F_TOT, fill=PatternFill('solid', fgColor='E2EFDA'), fmt=MONEY)
-    put(ws, f'{c["transit"]}{r}', f'=IF($A{r}="","",ROUND(${c["a_got"]}{r}-${c["b_got"]}{r},2))',
-        font=F_TXT, fmt=MONEY)
-    put(ws, f'{biz_col}{r}', f'=IF($A{r}="","",IF(ROUND(SUMPRODUCT(ABS(${c["sale"]}{r}:${c["b_got"]}{r})),2)=0,"无","有"))',
+    put(ws, f'{c["transit"]}{r}', f'=IF($A{r}="","",ROUND({bf["transit"]},2))', font=F_TXT, fmt=MONEY)
+    put(ws, f'{biz_col}{r}', f'=IF($A{r}="","",IF(ROUND(SUMPRODUCT(ABS(${c["sale"]}{r}:${c["transit"]}{r})),2)=0,"无","有"))',
         font=F_TXT, fill=FILL_CHK)
     ws.row_dimensions[r].height = 16
 
@@ -1088,16 +1175,19 @@ title(ws, '分表 · 按挂靠单位汇总', BIZ,
       '每个挂靠单位一行，行的先后跟你那份《对账明细》的表顺序一致（德誉嘉→迅驰→华城→金沁→湖南锦泰→康欣→安锐→杰华）。'
       '9.24 起回款按原表分两组：「欠业主未付款余额」＝开票额 − 业主已付给挂靠单位；'
       '「应收挂靠方余额」＝应收挂靠方金额（开票额去掉选了不回成本票的、加上代垫应收）− 管理费已结算 − 扣质保金 − 挂靠单位已转我方。'
-      '跟 8 张单位明细第 7 行的合计一一对得上。')
+      '跟 8 张单位明细第 7 行的合计一一对得上。填了期间：发生额按期间算，带「截至截止日」的几列是到截止日期为止的余额。'
+      '注意合计行是 8 家直接相加：链条项目上下两层各记一次（跟原表一样一家一张表），同一笔钱会算两遍；'
+      '金沁那一行的应收挂靠方是金沁欠康欣的（原表金沁表第二组叫「康欣回款情况」）。')
 widths(ws, SUM_W)
 DR = filter_band(ws, BIZ)
 headers(ws, HR, 1, ['单位简称', '单位全称'] + COLS_U + ['有无业务'])
+ws.row_dimensions[HR].height = 48
 for i in range(U1 - U0 + 1):
     r = Q0 + i
     put(ws, f'A{r}', f'=IFERROR(INDEX({U_NAME},MATCH({i+1},{U_RANK},0)),"")', font=F_LINK)
     put(ws, f'B{r}', f'=IF($A{r}="","",INDEX({QU}!$B${U0}:$B${U1},MATCH($A{r},{U_NAME},0)))',
         font=F_LINK, align=CL)
-    detail_cols(ws, r, f'$A{r}', None, DR, SUM_LAST, BIZ)
+    detail_cols(ws, r, f'$A{r}', None, DR, SUM_LAST, BIZ, owed_all=True)
     # 税费按「归属单位表」统计（＝这一笔算在哪家的对账表上），这样跟你原表那 8 张表逐家对得上；
     # 上面几列仍按开票方/收票方统计，好处是全公司合计不会把同一张票算两遍
     _dr = f',{FB},">="&{DR[0]},{FB},"<="&{DR[1]}'
@@ -1118,12 +1208,13 @@ ws = wb.create_sheet(SH_SUM_P)
 title(ws, '分表 · 按项目汇总', BIZ,
       '每个项目一行，行序＝项目档案的行序＝你那份《对账明细》里项目第一次出现的先后。'
       '「应到成本票」后面跟着两列：扣了管理费的那部分、没扣管理费的那部分 —— '
-      '只过票不收费（管理费率填 0）的票会落到「没扣管理费的」那一列，不用再一笔笔翻。'
+      '只过票不收费（计费方式选「不扣管理费」）的票会落到「按全额」那一列，不用再一笔笔翻。'
       '按项目看两个余额时要注意：原表有几笔回款是好几个项目一起收的、只记在其中一个项目上（比如康欣 7.8 到款 303,566.03 记在 A006），'
       '那个项目会显示负数、其余几个显示正数，加起来是对的，单位合计不受影响。')
 widths(ws, SUM_W)
 DR = filter_band(ws, BIZ)
 headers(ws, HR, 1, ['项目编号', '项目简称'] + COLS_U + ['有无业务'])
+ws.row_dimensions[HR].height = 48
 for i in range(P1 - P0 + 1):
     r, pr = Q0 + i, P0 + i
     put(ws, f'A{r}', f'=IF({QP}!$A{pr}="","",{QP}!$A{pr})', font=F_LINK)
@@ -1158,6 +1249,7 @@ widths(ws, SUM_W)
 DR = filter_band(ws, BIZ, unit_default='康欣')
 dv_list(ws, 'B3', f'={U_NAME}')
 headers(ws, HR, 1, ['项目编号', '项目简称'] + COLS_U + ['有无业务'])
+ws.row_dimensions[HR].height = 48
 for i in range(P1 - P0 + 1):
     r, pr = Q0 + i, P0 + i
     put(ws, f'A{r}', f'=IF({QP}!$A{pr}="","",{QP}!$A{pr})', font=F_LINK)
@@ -1243,6 +1335,9 @@ GROUP_COLS = {}
 for c, _, g, _, _ in VCOLS:
     if g: GROUP_COLS.setdefault(g, []).append(c)
 # 两组回款区在每家表上的标题（照原表第 2 行）
+# 金沁原表第二组是「康欣回款情况」—— 记的是金沁该付给康欣的钱，不是欠我方的
+GROUP_B_NOTE = {'金沁': '金沁欠康欣'}
+AP_TITLE = {'德誉嘉': '合伙项目应付款', '迅驰': '过账项目支付情况'}
 UNIT_A_BOND = {'金沁'}
 UNIT_NO_B_BOND = {'德誉嘉', '华城'}
 GROUP_TITLE = {
@@ -1263,7 +1358,7 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
     ws = wb.create_sheet(nm)
     title(ws, f'{u} · 对账明细（给领导看的逐笔明细）', VD_LAST,
           f'表头照你那份《对账明细》的「{SRC_XLS[u].strip()}」表来：第 5 行是组名、第 6 行是列名，'
-          '一笔业务一行，按日期顺序；回款区照原表分两组 ——「欠业主未付款」和「应收挂靠方」，两个余额逐行滚动。'
+          '一笔业务一行，按业务流水的录入顺序（历史行按日期）；回款区照原表分两组 ——「欠业主未付款」和「应收挂靠方」，两个余额逐行滚动。'
           '摘要前面带【业务类型】的是同一张原表行拆出来的回款 / 管理费，不是重复。明细全部显示不折叠；'
           '上面填年度或起止日期，第 7 行的合计只统计落在期间内的行（最后一列标是/否，'
           '不在期间内的行是灰的）。数据全部来自【业务流水】里归属到本单位的行，'
@@ -1290,7 +1385,9 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
     ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].hidden = True
     # 两层表头
-    gt = {G_A: f'{GROUP_TITLE[u][0]}（欠业主未付款）', G_B: f'{GROUP_TITLE[u][1]}（应收挂靠方）'}
+    gt = {G_A: f'{GROUP_TITLE[u][0]}（欠业主未付款）',
+          G_B: f'{GROUP_TITLE[u][1]}（{GROUP_B_NOTE.get(u, "应收挂靠方")}）',
+          '过账/合伙应付款': AP_TITLE.get(u, '过账/合伙应付款')}
     for c, _, g, nmc, _ in VCOLS:
         put(ws, f'{c}{VD_HC}', nmc, font=F_HDR2, fill=FILL_HDR2, align=C)
         if not g:
@@ -1374,16 +1471,21 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
                           f'&COUNTIF(${IR}${VD_0}:${IR}${VD_1},"是")+COUNTIF(${IR}${VD_0}:${IR}${VD_1},"否")'
                           f'&" 笔）"', font=F_TOT, fill=FILL_TOT, align=CL)
     RUNCOL = {VC[key]: pm for key, pm in VD_RUN.items()}
+    _B = f'$B${VD_0}:$B${VD_1}'
     for c in VD_MONEY:
         if c in RUNCOL:
+            # 余额列＝截至截止日期的余额（从第一笔累计到截止日），不是期间内的发生额相减 ——
+            # 否则填了年度，2025 年开票、2026 年回款的项目会算出很大的负数
             plus, minus = RUNCOL[c]
-            f = '+'.join(f'${VC[k]}${VD_TOT}' for k in plus) + ''.join(f'-${VC[k]}${VD_TOT}' for k in minus)
+            f = '+'.join(f'SUMIFS(${VC[k]}${VD_0}:${VC[k]}${VD_1},{_B},"<="&$B$4)' for k in plus)
+            f += ''.join(f'-SUMIFS(${VC[k]}${VD_0}:${VC[k]}${VD_1},{_B},"<="&$B$4)' for k in minus)
             put(ws, f'{c}{VD_TOT}', f'=ROUND({f},2)', font=F_TOT, fill=FILL_TOT, fmt=MONEY)
         else:
             put(ws, f'{c}{VD_TOT}',
                 f'=ROUND(SUMIF(${IR}${VD_0}:${IR}${VD_1},"是",{c}${VD_0}:{c}${VD_1}),2)',
                 font=F_TOT, fill=FILL_TOT, fmt=MONEY)
-    put(ws, f'{VC["note"]}{VD_TOT}', '合计只算「在期间内＝是」的行', font=F_NOTE, fill=FILL_TOT, align=CL)
+    put(ws, f'{VC["note"]}{VD_TOT}', '发生额只算「在期间内＝是」的行；余额列（剩余开票金额、欠税未交、两个余额、未收款、未付款）是截至截止日期的余额',
+        font=F_NOTE, fill=FILL_TOT, align=CL)
     put(ws, f'{IR}{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
     put(ws, f'{PTR}{VD_TOT}', None, font=F_TOT, fill=FILL_TOT)
     ws.row_dimensions[VD_TOT].height = 20
@@ -1399,23 +1501,18 @@ for u in [x[0] for x in UNITS if x[2] == '挂靠单位']:
     mine = [e for e in EV if SHEET2UNIT.get(e['src'].split('!')[0].strip(),
                                             e['src'].split('!')[0].strip()) == sh]
     has_reb = any(e.get('rebate') for e in mine)
-    has_ap = (u == '迅驰')
-    has_wage = any(e['kind'] == '工资扣抵' for e in EV) and u == '康欣'
+    has_ap = any(e['kind'].startswith('其他应付') for e in mine) or u == '迅驰'
     has_tax = any((e.get('tax_v') or 0) + (e.get('tax_s') or 0) + (e.get('tax_y') or 0)
                   + (e.get('tax_i') or 0) for e in mine)
+    # 只隐藏这家单位原表里没有、历史上也一笔没有的整组（返管理费、过账/合伙应付款、交税）。
+    # 回款两组、代发工资这几列一律显示 —— 以后录了扣质保金、工资扣抵，数就看得见
     hide = []
     if not has_reb: hide += GROUP_COLS['返管理费']
     if not has_ap: hide += GROUP_COLS['过账/合伙应付款']
-    if not has_wage: hide += ['L']
     if not has_tax: hide += GROUP_COLS['交税情况']
-    # 原表只有金沁单列「业主扣的质保金」；德誉嘉、华城的泓普回款区没有质保金列
-    if u not in UNIT_A_BOND: hide += [VC['a_bond']]
-    if u in UNIT_NO_B_BOND: hide += [VC['b_bond']]
     for c in hide: ws.column_dimensions[c].hidden = True
     ws.column_dimensions[PTR].hidden = True
     nrow = len(mine)
-    for r in range(VD_0 + nrow + 30, VD_1 + 1):
-        ws.row_dimensions[r].hidden = True
     ws.auto_filter.ref = f'A{VD_HC}:{IR}{VD_1}'
     ws.freeze_panes = f'C{VD_0}'
     page(ws, titles=f'{VD_HG}:{VD_HC}')
@@ -1517,7 +1614,7 @@ ws.freeze_panes = f'C{Q0}'; page(ws, titles=f'{HR}:{HR}')
 # ============================================================ 往来台账（其他应收 / 其他应付）
 ws = wb.create_sheet(SH_CUR)
 title(ws, '分表 · 往来台账（其他应收款 · 其他应付款）', 'M',
-      '其他应收款＝挂靠单位按管理费率扣走后又答应返给我方的现金（德誉嘉扣 8% 返 4%）。'
+      '其他应收款＝挂靠单位按管理费率扣走后又答应返给我方的现金（德誉嘉 2026-7-22 以前的票扣 8% 返 4%，以后改成直接扣 4% 不返）。'
       '其他应付款＝收到的过账款、合伙项目要转给别人的钱，先减掉我方已代垫的税费，剩下的才是真正要付的。')
 widths(ws, {'A':12,'B':24,'C':15,'D':14,'E':14,'F':11,'G':3,'H':14,'I':14,'J':14,'K':14,'L':11,'M':10})
 DR = filter_band(ws, 'M')
@@ -1537,9 +1634,9 @@ for i in range(U1 - U0 + 1):
     put(ws, f'F{r}', f'=IF($A{r}="","",IF(ROUND($C{r},2)=0,"—",IF(ABS($E{r})<1,"✓ 已收清","未收回")))',
         font=F_TXT, fill=FILL_CHK)
     put(ws, f'G{r}', None, border=None)
-    put(ws, f'H{r}', f'=IF($A{r}="","",{agg(FI,"F","其他应付发生",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
-    put(ws, f'I{r}', f'=IF($A{r}="","",{agg(FI,"F","其他应付扣税",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
-    put(ws, f'J{r}', f'=IF($A{r}="","",{agg(FI,"F","其他应付支付",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
+    put(ws, f'H{r}', f'=IF($A{r}="","",{agg(FI,"U","其他应付发生",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
+    put(ws, f'I{r}', f'=IF($A{r}="","",{agg(FI,"U","其他应付扣税",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
+    put(ws, f'J{r}', f'=IF($A{r}="","",{agg(FI,"U","其他应付支付",f"$A{r}",None,DR)})', font=F_LINK, fmt=MONEY)
     put(ws, f'K{r}', f'=IF($A{r}="","",ROUND($H{r}-$I{r}-$J{r},2))', font=F_TOT, fmt=MONEY)
     put(ws, f'L{r}', f'=IF($A{r}="","",IF(ROUND($H{r},2)=0,"—",IF(ABS($K{r})<1,"✓ 已付清","未付清")))',
         font=F_TXT, fill=FILL_CHK)
@@ -1632,8 +1729,9 @@ for i in range(P1 - P0 + 1):
     put(ws, f'J{r}', f'=IF($A{r}="","",{agg(FAA,None,"销项开票",None,f"$A{r}",DR)})', font=F_LINK, fmt=MONEY)
     put(ws, f'K{r}', f'=IF($A{r}="","",ROUND($G{r}-$H{r}-$I{r}+$J{r},2))', font=F_TOT, fmt=MONEY)
     put(ws, f'L{r}', f'=IF(OR($A{r}="",$G{r}=0),"",$K{r}/$G{r})', font=F_TXT, fmt=PCT)
-    cost = f'SUMIFS({JJ2},{JD2},$A{r}{DJ2})' + ''.join(
-        f'-SUMIFS({JJ2},{JD2},$A{r},{JE2},"{t}"{DJ2})' for t in NOT_COST)
+    JK2 = JRNG('K')
+    cost = (f'SUMIFS({JJ2},{JD2},$A{r}{DJ2})-SUMIFS({JK2},{JD2},$A{r}{DJ2})' + ''.join(
+        f'-SUMIFS({JJ2},{JD2},$A{r},{JE2},"{t}"{DJ2})+SUMIFS({JK2},{JD2},$A{r},{JE2},"{t}"{DJ2})' for t in NOT_COST))
     put(ws, f'M{r}', f'=IF($A{r}="","",{cost})', font=F_LINK, fmt=MONEY)
     put(ws, f'N{r}', f'=IF($A{r}="","",ROUND($K{r}-$M{r},2))', font=F_TOT, fmt=MONEY)
     put(ws, f'O{r}', f'=IF($A{r}="","",ROUND({agg(FI,None,"其他应付发生",None,f"$A{r}",DR)}'
@@ -1671,13 +1769,13 @@ ws.conditional_formatting.add(f'C{PRF_0}:C{PRF_1}',
 hide_tail(ws, PRF_0, PRF_1, set(range(PRF_0, PRF_0 + NP)), col_idx('R') - 1, f'A{HR}:R{PRF_1}')
 put(ws, f'A{PRF_1+2}',
     '口径：业主端开票额只取「对业主开票」那一层，多条挂靠链各自的顶层都算、中间层不重复计。'
-    '应提税费是按单位档案参数逐笔算出来的（不管交没交）。项目实际支出取【资金日记账】里填了本项目编号的支出，'
+    '应提税费取【业务流水】税费录入区（P~S）逐笔填的数（不管交没交）。项目实际支出取【资金日记账】里填了本项目编号的支出，'
     '已扣掉 ' + '、'.join(NOT_COST) + ' 这几类（要么已在管理费/税费里算过，要么不是工程成本）。'
     '「应转他方」＝【往来台账】里这个项目的其他应付发生额减去我方代垫税费；'
     '这一列吃掉大半毛利的项目状态标「过账为主」（比如迅驰过账的那 8 个机械费项目，'
     '钱本来就不是我们的，原表把该扣的 2,437.03 元税费记在单位层面没落到项目上，所以这几行会带个小负数）。　　'
     '注意：项目实际支出认的是【资金日记账】E 列「项目编号」（填 A001 这种编号，跟项目档案一致），'
-    '取的是贷方（付出去的钱）；出纳那边这一列空着的，这里就是 0。',
+    '取的是贷方减借方（付出去的钱减退回来的钱）；出纳那边这一列空着的，这里就是 0。',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells(f'A{PRF_1+2}:R{PRF_1+2}')
 ws.freeze_panes = f'C{PRF_0}'; page(ws, titles=f'{HR}:{HR}')
@@ -1765,7 +1863,8 @@ title(ws, '分表 · 费用统计', EX_LAST,
       '没补的也不会丢，统一落在最下面「上面没列到的类型」那一行。')
 widths(ws, {'A': 16, **{L(2 + j): 12 for j in range(N_ACCT)}, 'L': 13, 'M': 13, 'N': 2,
             'O': 10, 'P': 30, 'Q': 14})
-DRJ = filter_band(ws, EX_LAST)
+DRJ = filter_band(ws, EX_LAST, note='留空＝全部期间；填了年度就按整年取数，另填起止日期则以起止为准',
+                  cnt_label='资金日记账', cnt_rng=JRNG('B'))
 JK, JL, JB, JJC, JF, JE_ = JRNG('K'), JRNG('L'), JRNG('B'), JRNG('J'), JRNG('F'), JRNG('E')
 DJ = f',{JRNG("X")},1,{JB},">="&{DRJ[0]},{JB},"<="&{DRJ[1]}'
 headers(ws, HR, 1, ['费用类型'])
@@ -1774,7 +1873,7 @@ for j in range(N_ACCT):
     put(ws, f'{c}{HR}', f'=IF({QJ}!$O${JR0 + j}="","",{QJ}!$O${JR0 + j})', font=F_HDR, fill=FILL_HDR)
 headers(ws, HR, 12, ['收入合计\n(借方)', '支出合计\n(贷方)'])
 put(ws, f'N{HR}', None, font=F_HDR, fill=FILL_HDR)
-headers(ws, HR, 15, ['项目编号', '项目简称', '支出合计\n(贷方)'])
+headers(ws, HR, 15, ['项目编号', '项目简称', '项目实际支出\n(贷−借，不含税费/借还款等)'])
 ws.row_dimensions[HR].height = 30
 ETYPES = ['工程回款', '借款', '还借款', '工资', '社保', '福利费', '餐费', '车辆费用', '燃油费', '运费',
           '材料费', '耗材费用', '办公费用', '维修费', '青苗费', '饮用水费用', '医疗费', '租赁费', '手续费',
@@ -1817,12 +1916,26 @@ for i in range(P1 - P0 + 1):
     r, pr = Q0 + i, P0 + i
     put(ws, f'O{r}', f'=IF({QP}!$A{pr}="","",{QP}!$A{pr})', font=F_LINK)
     put(ws, f'P{r}', f'=IF($O{r}="","",{QP}!$C{pr})', font=F_LINK, align=CL)
-    put(ws, f'Q{r}', f'=IF($O{r}="","",SUMIFS({JL},{JE_},$O{r}{DJ}))', font=F_LINK, fmt=MONEY)
+    # 跟【项目利润】「项目实际支出」同一个口径：贷方 − 借方（退款冲减），不算税费 / 管理费 / 借还款这类
+    _pc = (f'SUMIFS({JL},{JE_},$O{r}{DJ})-SUMIFS({JK},{JE_},$O{r}{DJ})'
+           + ''.join(f'-SUMIFS({JL},{JE_},$O{r},{JF},"{t}"{DJ})+SUMIFS({JK},{JE_},$O{r},{JF},"{t}"{DJ})'
+                     for t in NOT_COST))
+    put(ws, f'Q{r}', f'=IF($O{r}="","",ROUND({_pc},2))', font=F_LINK, fmt=MONEY)
     if r > E_REST: ws.row_dimensions[r].height = 16
-for r in range(max(E_REST, Q0 + NP + SPARE) + 1, QP_1 + 1):
-    ws.row_dimensions[r].hidden = True
-put(ws, f'A{QP_1+2}', HIDE_NOTE + '　｜　左表的科目表头取自【资金日记账】O 列「基础设置」；'
-                      '费用类型要跟出纳账里写的一字不差（比如「耗材费用」和「耗材费」算两类）。',
+# 科目不在基础设置里的：只进收入 / 支出合计，进不了任何一个科目列 —— 单独列一行提醒
+E_ACC = E_REST + 1
+put(ws, f'A{E_ACC}', '其中：科目不在基础设置里的', font=F_NOTE, align=CL)
+for j in range(N_ACCT): put(ws, f'{L(2 + j)}{E_ACC}', None, font=F_NOTE)
+put(ws, f'L{E_ACC}', f'=ROUND(SUMIFS({JK}{DJ})-SUMPRODUCT(SUMIFS({JK},{JJC},$B${HR}:$K${HR}{DJ})),2)',
+    font=F_NOTE, fmt=MONEY)
+put(ws, f'M{E_ACC}', f'=ROUND(SUMIFS({JL}{DJ})-SUMPRODUCT(SUMIFS({JL},{JJC},$B${HR}:$K${HR}{DJ})),2)',
+    font=F_NOTE, fmt=MONEY)
+ws.conditional_formatting.add(f'A{E_ACC}:M{E_ACC}',
+    FormulaRule(formula=[f'OR(ABS(N($L{E_ACC}))>0.005,ABS(N($M{E_ACC}))>0.005)'], fill=FILL_WARN,
+                font=Font(color='9C0006', bold=True)))
+put(ws, f'A{QP_1+2}', '左表的科目表头取自【资金日记账】O 列「基础设置」；费用类型要跟出纳账里写的一字不差'
+                      '（比如「耗材费用」和「耗材费」算两类），没列到的类型落在「上面没列到的类型」那一行。'
+                      '右表「项目实际支出」跟【项目利润】同一个口径。',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells(f'A{QP_1+2}:{EX_LAST}{QP_1+2}')
 ws.freeze_panes = f'B{Q0}'; page(ws, titles=f'{HR}:{HR}')
@@ -1833,9 +1946,10 @@ print('  ✓ 税费台账 / 代收台账 / 费用统计')
 # 逐家逐列拿你那份《对账明细》9.13 版的合计行跟系统算出来的数比，差在哪、为什么差，一张表说清楚
 ws = wb.create_sheet(SH_DIFF)
 title(ws, '对账差异说明（系统 ↔ 原《对账明细》9.13 版）', 'G')
-put(ws, 'A2', '左边是你原表每张表最上面那行合计，右边是系统按「来源表＝这张表」算出来的同口径数。'
-              '差额绝对值小于 0.05 元的算对上了（原表本身有四舍五入尾差）。'
-              '真正对不上的只有一处，下面第二块逐笔列了出来。这张表不参与任何计算，纯粹给你核对用。',
+put(ws, 'A2', '左边是你原表每张表最上面那行合计，右边是系统按「来源表＝这张表」算出来的同口径数（只算原表来的行）。'
+              '差额绝对值小于 0.05 元的算对上了（原表本身有四舍五入尾差）；标「△ 已查明」的是原表自己手填、漏填造成的，原因写在说明列。'
+              '注意：单位明细第 7 行、单位汇总还含 9.13 以后新录的行，所以会比这里多 —— 华城多 9.23 那 4 张票 35,686.00，'
+              '德誉嘉多 9.20 红冲重开的 40.00。最下面第二块逐笔列了 9.24 对业务流水的每一处改动。这张表不参与任何计算，纯粹给你核对用。',
     font=F_NOTE, align=CL, border=None)
 ws.merge_cells('A2:G2')
 widths(ws, {'A': 12, 'B': 18, 'C': 16, 'D': 16, 'E': 13, 'F': 12, 'G': 60})
@@ -1902,8 +2016,9 @@ ORIG_COL = {
 # 已知的、查清了原因的差异 / 补录说明（逐行对过原表，写在「说明」列）
 _SEG = '原表逐行余额是按项目分段重新起算的，只比合计行；系统按日期连续累计，最后一行就等于合计'
 DF_NOTE = {
-    ('康欣', '已到成本票'): '9.24 补录了原表「已提供成本票」列 7 笔：6 笔「未开票按3%扣点子（不提供成本票）」'
-                           '（发票性质记「不开票」，康欣明细里标红）＋ 2025.12.08 大太老旧路 203,652',
+    ('康欣', '已到成本票'): '9.24 补录了原表「已提供成本票」列 7 笔（6 笔扣点 ＋ 2025.12.08 大太老旧路 203,652）。'
+                           '原表 H68 列的「未开票按3%扣点子」一共 9 笔 287,173.15（×3%＝8,615.19，就是第 21 行已到账那笔），'
+                           '9 笔发票性质都记「不开票」，康欣明细里标红',
     ('华城', '欠业主·应收工程款'): '原表这一列是手填的：第 18~22 行（7.20/7.22 开给民能的 5 张票，共 24,438.86）漏填，'
                                   '第 15 行把 6,701.38 写成 6,702.38（多 1.00）。系统逐笔取开票额，以系统为准',
     ('华城', '欠业主未付款余额'): '差额来源同上一行（原表第 18~22 行漏填、第 15 行多写 1.00）',
@@ -1913,9 +2028,10 @@ DF_NOTE = {
                                   '第 58 行手填的 408.77 按「代垫应收」补录（数值＝金沁表该票应扣税费，原表没写说明，请核实）',
     ('金沁', '欠业主·业主扣质保金'): '9.24 按原表补录 6 笔「业主扣质保金」（第 5 行 521.43；第 30~34 行按开票额×3%，系统取到分）',
     ('金沁', '欠业主未付款余额'): '原表合计行＝应收−已回款（不扣质保金），系统同口径；原表逐行公式另扣了质保金，逐行跟合计行对不上',
-    ('杰华', '应收挂靠方·扣管理费'): '原表「扣管理费10%」列一格没填，但合计行余额是按扣了 10% 算的（9.11 工资表抵成本 110,075.15 '
-                                  '正好＝扣完 10% 的应收成本票）。9.24 补录管理费结算 12,230.57，这一列因此比原表多，余额对上',
-    ('杰华', '应收挂靠方余额'): '原表合计行＝应收成本票−已到账（已按 10% 扣了管理费），系统补录管理费结算后同口径',
+    ('杰华', '应收挂靠方·扣管理费'): '原表「扣管理费10%」列一格没填，可合计行余额公式 AB4＝J4−Z4−AA4 用的是扣完 10% 的应收成本票；'
+                                  '原表自己的逐行余额（AB9＝119,004.86）又没扣，原表前后不一致。9.24 按合计行口径补录了 9.11 管理费结算 12,230.57，'
+                                  '这一列因此比原表多、余额跟合计行对上 —— 请跟杰华核实这 10% 是不是已经按扣了',
+    ('杰华', '应收挂靠方余额'): '按原表合计行 AB4 口径（已扣 10% 管理费）；原表逐行余额是 119,004.86。请核实',
     ('湖南锦泰', '应收挂靠方余额'): '原表合计行按应扣管理费 16,389.33 算、实扣手填 16,389.36，尾差 0.03；' + _SEG,
     ('安锐', '欠业主·开票已回款'): '原表第 9 行手填的 2,728.39 正好等于 5 个项目应扣管理费之和，德誉嘉表里找不到这笔付款，'
                                  '像是把管理费记进了已回款；照原表保留，请核实',
@@ -2007,13 +2123,13 @@ hr3 = r2
 r2 += 1
 EXTRA_CHK = [
     ('德誉嘉', '返管理费 4%（其他应收）', round(sum(e.get('rebate', 0) for e in EV), 2),
-     f'=SUMIFS({FAA},{KD},"销项开票",{KE},"德誉嘉",{KZ},"是")', '原表「返管理费4%」那一列的合计'),
+     f'=SUMIFS({FAA},{KD},"销项开票",{KE},"德誉嘉",{KZ},"是",{FSRC},"<>")', '原表「返管理费4%」那一列的合计'),
     ('迅驰', '过账应付工程款', round(sum(x['amt'] for x in PASS_ROWS), 2),
-     f'=SUMIFS({FI},{KD},"其他应付发生",{KF},"迅驰",{KZ},"是")', '原表迅驰「过账应付工程款」列'),
+     f'=SUMIFS({FI},{KD},"其他应付发生",{FSRC},"迅驰")', '原表迅驰「过账应付工程款」列'),
     ('迅驰', '过账应扣税费', round(sum(x['amt'] for x in DED_ROWS), 2),
-     f'=SUMIFS({FI},{KD},"其他应付扣税",{KF},"迅驰",{KZ},"是")', '原表迅驰「已付款」列'),
+     f'=SUMIFS({FI},{KD},"其他应付扣税",{FSRC},"迅驰")', '原表迅驰「已付款」列'),
     ('康欣', '工资扣抵（劳务成本）', round(sum(x['amt'] for x in WAGE_ROWS), 2),
-     f'=SUMIFS({FI},{KD},"工资扣抵",{KZ},"是")', '原总台账「劳务成本·工资扣抵」列'),
+     f'=SUMIFS({FI},{KD},"工资扣抵",{FSRC},"总台账")', '原总台账「劳务成本·工资扣抵」列'),
 ]
 for u, lab, ov, f, note in EXTRA_CHK:
     put(ws, f'A{r2}', u, font=F_TXT)
@@ -2079,10 +2195,10 @@ CARDS2 = [
  ('机械票还差（按项目净额）', f'={QGAP}!$J${TR}', 'FCE4E4'),
  ('其他应收·待返现',  f'={QCUR}!$E${TR}', 'FFF2CC'),
  ('其他应付·待转付',  f'={QCUR}!$K${TR}', 'FCE4E4'),
- ('欠业主未付款余额', f'={QSU}!${SU["a_left"]}${TR}', 'FCE4D6'),
- ('应收挂靠方余额',   f'={QSU}!${SU["b_left"]}${TR}', 'E2EFDA'),
- ('挂靠单位已转我方', f'={QSU}!${SU["b_got"]}${TR}', 'E2EFDA'),
- ('在途资金·代收未转', f'={QSU}!${SU["transit"]}${TR}', 'FCE4E4'),
+ ('欠业主未付款（8家相加）', f'={QSU}!${SU["a_left"]}${TR}', 'FCE4D6'),
+ ('应收挂靠方（8家相加）', f'={QSU}!${SU["b_left"]}${TR}', 'E2EFDA'),
+ ('挂靠单位已转出（8家相加）', f'={QSU}!${SU["b_got"]}${TR}', 'E2EFDA'),
+ ('代收未转（8家相加）', f'={QSU}!${SU["transit"]}${TR}', 'FCE4E4'),
  ('自营项目 归属利润', f'={QPRF}!$P${TR+1}', 'E2EFDA'),
  ('合伙项目 归属利润', f'={QPRF}!$P${TR+2}', 'FFF2CC'),
  ('全部项目 票面毛利', f'={QPRF}!$K${TR}', 'D6E4F0'),
@@ -2110,15 +2226,18 @@ for i, (lab, f, color) in enumerate(CARDS2):
 SR = row + 3 * ((len(CARDS2) + 3) // 4)
 CHECKS = [
     ('对原表核对', f'={QDIF}!$D${DIF_SUM_R}'),
-    ('业务流水校验', f'=IF(COUNT({QF}!$B${F0}:$B${F1})-COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"√")'
-                    f'-COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"链条待确认")=0,'
+    ('业务流水校验', f'=IF(SUMPRODUCT(({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"")'
+                    f'*({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"√")'
+                    f'*({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"链条待确认"))=0,'
                     f'"✓ 全部通过"&IF(COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"链条待确认")>0,'
                     f'"（另有 "&COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"链条待确认")&" 行是多链条项目，仅提示不影响汇总）",""),'
-                    f'"✗ 有 "&(COUNT({QF}!$B${F0}:$B${F1})-COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"√")'
-                    f'-COUNTIF({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1},"链条待确认"))&" 行待修正")'),
-    ('日记账校验',   f'=IF(SUMPRODUCT(({JRNG("Y")}<>"")*({JRNG("Y")}<>"√"))=0,'
-                    f'"✓ 全部通过（"&COUNTIF({JRNG("Y")},"√")&" 笔，科目 "&COUNTA({QJ}!$O${JA0}:$O${JA1})&" 个）",'
-                    f'"✗ 有 "&SUMPRODUCT(({JRNG("Y")}<>"")*({JRNG("Y")}<>"√"))&" 行待修正（看日记账最右边校验列）")'),
+                    f'"✗ 有 "&SUMPRODUCT(({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"")'
+                    f'*({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"√")'
+                    f'*({QF}!${C_["chk"]}${F0}:${C_["chk"]}${F1}<>"链条待确认"))&" 行待修正（看业务流水 O 列红色的）")'),
+    ('日记账校验',   f'=IF(SUMPRODUCT(({JRNG("Y")}<>"")*(LEFT({JRNG("Y")},1)<>"√"))=0,'
+                    f'"✓ 全部通过（"&COUNTIF({JRNG("Y")},"√")&" 笔，科目 "&COUNTA({QJ}!$O${JA0}:$O${JA1})&" 个）"'
+                    f'&IF(LEFT({QJ}!$O${J_TOT+1},1)="⚠","；"&MID({QJ}!$O${J_TOT+1},3,60),""),'
+                    f'"✗ 有 "&SUMPRODUCT(({JRNG("Y")}<>"")*(LEFT({JRNG("Y")},1)<>"√"))&" 行待修正（看日记账最右边校验列）")'),
     ('项目档案校验', f'=IF(COUNTA({QP}!$A${P0}:$A${P1})-COUNTIF({QP}!$U${P0}:$U${P1},"√")'
                     f'-COUNTIF({QP}!$U${P0}:$U${P1},"待完善*")=0,'
                     f'"✓ 全部通过"&IF(COUNTIF({QP}!$U${P0}:$U${P1},"待完善*")>0,'
@@ -2167,15 +2286,18 @@ NAV2 = [
                      '再填这一笔的管理费率、返现率，选一下「计费方式」，右边税费四列按实际填。'
                      '管理费、应开成本票自动算。'),
  ('我们开成本票过去', '【业务流水】业务类型「成本票」，开票方＝我方主体，收票方＝挂靠单位，票据类型要和对应的销项票一致。'),
- ('用工资表顶劳务票', '【业务流水】业务类型「工资扣抵」，填项目编号和金额 —— 【发票缺口】里的劳务票应开就会相应减少。'),
- ('业主付钱给挂靠单位', '【业务流水】选「挂靠代收」，付款方＝业主，收款方＝挂靠单位。这笔钱还没到我们手上。'),
+ ('用工资表顶劳务票', '【业务流水】业务类型「工资扣抵」，开票/付款方＝泓普，收票/收款方＝挂靠单位，填项目编号和金额 —— '
+                    '只有【发票缺口】里的劳务票还差会相应减少（单位明细的剩余开票金额跟原表一样不扣它）。'),
+ ('业主付钱给挂靠单位', '【业务流水】选「挂靠代收」，付款方＝业主（或者上一层挂靠单位），收款方＝收钱的那家挂靠单位。这笔钱还没到我们手上。'),
  ('挂靠单位转钱给我们', '【业务流水】选「我方收款」（代发工资、税差抵扣的也算）；真到银行的那部分出纳照常记日记账。'),
  ('红冲 / 补成本票 / 改错', '原行不动，红冲另录负数 + 重开；补成本票另录一行「成本票」；千万别删整行。详见【操作流程】第四部分。'),
- ('德誉嘉返 4% 现金', '开票那一行的「返现率」自动是 4%，钱一直挂在【往来台账】其他应收款上；'
-                     '真收到现金时录一行「其他应收收回」冲掉。'),
+ ('德誉嘉返现', '2026-7-22 以前德誉嘉的票是扣 8% 返 4%（历史数据已录好，返现挂在【往来台账】其他应收款上）；'
+               '以后的新票管理费率填 4%、返现率填 0。以前挂着的返现真收到时录一行「其他应收收回」冲掉。'),
  ('过账款 / 合伙分钱', '收到别人的过账款录「其他应付发生」；我方为这笔垫的税费录「其他应付扣税」；真转出去录「其他应付支付」。'
+                      '这三类开票/付款方、收票/收款方都选那家过账单位（比如迅驰），真正的收款人写在摘要里。'
                       '【往来台账】③ 按项目算出「扣完税费后还该转给别人多少」。'),
- ('交税', '【业务流水】选「已交税」记实际交的；该提多少税在开票那一行右边「税费录入区」四列按实际填。'),
+ ('交税', '【业务流水】选「已交税」，开票/付款方选这笔税是替哪家挂靠单位交的（泓普代交的也选那家），收票/收款方选税局；'
+        '该提多少税在开票那一行右边「税费录入区」四列按实际填。'),
  ('日常收付款', '出纳在自己那本《出纳日记账》里录，录完把 B~M 列复制，到【资金日记账】B 列第一个空行选择性粘贴「数值」。'
              '科目清单在 O 列「基础设置」，余额按科目自动算。'),
  ('要看结果', '【单位汇总】【项目汇总】【项目利润】【链条核算】【发票缺口】【往来台账】【税费台账】【费用统计】'
@@ -2218,12 +2340,13 @@ DOC = [
  ('空白行会折叠', '查询表只显示有数据的行，空白行已经隐藏起来。新增项目或换了查询区间之后，'
                  '点一下 数据 → 筛选 → 重新应用，行数就会跟着变。录入表（单位档案 / 项目档案 / 业务流水 / 资金日记账）'
                  '永远全部显示，方便往下录。'),
- ('合计在表头下面', '每张查询表的合计行就在表头正下方第 6 行，不用翻到底，筛选也不会影响它。'),
+ ('合计在表头下面', '查询表的合计行在表头正下方（汇总表第 6 行，8 张单位明细第 7 行），不用翻到底，筛选也不会影响它。'
+                  '填了期间以后，发生额按期间算，各种「余额」按截止日期算（从第一笔累计到截止日）。'),
  ('管理费怎么定（这一轮改了）', None),
  ('费率改成逐笔手填', '【单位档案】的「默认管理费率 / 默认返现率 / 第二档」五列已经取消。'
                     '现在管理费率和返现率直接在【业务流水】那两个淡黄色格子里按这一笔的实际情况填，'
                     '后面所有表一律从业务流水取数。这样就不会再出现「档案填一个率、原表实际是另一个率」对不上的情况。'
-                    '历史 385 行已按你那份《对账明细》9.13 版逐笔写死，一分没动。'),
+                    '历史行已按你那份《对账明细》9.13 版逐笔写死。'),
  ('计费方式三选一', '【业务流水】新增「计费方式」列：'
                   '① 扣管理费 —— 正常业务，管理费＝金额×费率，应开成本票＝金额−管理费；'
                   '② 不扣管理费 —— 只借通道过票、一分不收（康欣老项目那种），应开成本票＝全额；'
@@ -2254,8 +2377,8 @@ DOC = [
  ('工资扣抵', '用工资表 / 代发工资顶掉的那部分劳务成本，在【业务流水】录「工资扣抵」，'
              '缺口表的劳务票还差就会相应减少。'),
  ('往来款怎么走', None),
- ('其他应收·返现', '挂靠单位先全额扣管理费，再把其中一部分现金返给我们（德誉嘉扣 8% 返 4%）。'
-                 '开票那一行自动按「返现率」挂一笔应收；真收到钱录一行「其他应收收回」冲掉。'
+ ('其他应收·返现', '挂靠单位先全额扣管理费，再把其中一部分现金返给我们（德誉嘉 2026-7-22 以前扣 8% 返 4%，以后直接扣 4% 不返）。'
+                 '开票那一行按手填的「返现率」挂一笔应收；真收到钱录一行「其他应收收回」冲掉。'
                  '【往来台账】左半边就是每家还欠我们多少返现。'),
  ('其他应付·过账', '别人的钱从迅驰过账到我们账上，这笔钱不是我们的：录「其他应付发生」。'
                  '我方为这笔先垫的税费录「其他应付扣税」，真转出去录「其他应付支付」。'
@@ -2281,8 +2404,8 @@ DOC = [
                     '要么根本不是工程成本。'),
  ('给领导的单位专表（这一轮改了）', None),
  ('一家一张 · 竖版逐笔', '8 张单位专表（德誉嘉明细 / 迅驰明细 …）表头照你那份《对账明细》的样子做，'
-                          '「一笔业务一行」按日期竖着排，一行一行能跟原表对得上。'
-                          '上面填年度或起止日期，第 7 行的「期间合计」只统计落在期间内的行'
+                          '「一笔业务一行」竖着排（按业务流水的录入顺序，历史行按日期），一行一行能跟原表对得上。'
+                          '上面填年度或起止日期，第 7 行的发生额只统计落在期间内的行，余额列是截至截止日期的余额'
                           '（最后一列会标是/否，不在期间内的行显示成灰色）。'
                           '不是开票的行，摘要前面带【挂靠代收】【我方收款】这种类型标签，同一张原表行拆出来的几笔不会再看着像重复。'),
  ('两组回款（9.24 新增）', '照原表把回款区分成两组：「××回款情况（欠业主未付款）」＝应收工程款 / 业主扣质保金 / 开票已回款 / '
@@ -2304,8 +2427,12 @@ DOC = [
                         '原来「泓普 / 仟茂 / 现金」三账户那张旧表和单独的《出纳资金日记账.xlsx》都已删掉，'
                         '【首页】【项目利润】【费用统计】全部改成从新表取数。'),
  ('钱在谁手上', None),
- ('四个数', '业主还没付给挂靠单位 →「欠业主未付款余额」；业主付了但挂靠单位压着没转 →「挂靠单位代收未转」；'
-           '挂靠单位还欠我们多少 →「应收挂靠方余额」；已经到我们手上 →「挂靠单位已转我方」。逐笔看【代收台账】和单位明细。'),
+ ('四个数', '上游（业主或上一层挂靠单位）还没付给这家挂靠单位的 →「欠业主未付款余额」；'
+           '这家挂靠单位还欠我们多少 →「应收挂靠方余额」；已经到我们手上 →「挂靠单位已转我方」；'
+           '上游付了、扣掉管理费质保金后这家单位还压着没转的 →「挂靠单位代收未转」。逐笔看【代收台账】和单位明细。'),
+ ('合计有重复', '链条项目（比如金沁开给民能、康欣再开给金沁；华城、安锐、杰华开给德誉嘉）在上下两层单位里各记一次 —— '
+               '原表本来就是一家一张表各记各的。所以【单位汇总】合计行和首页那几张回款卡片是 8 家直接相加，同一笔钱会算两遍；'
+               '要看准确的数，看单家那一行或单家明细。另外金沁表第二组原表叫「康欣回款情况」，记的是金沁该付给康欣的钱，不是欠我方的。'),
  ('注意', None),
  ('不要改灰色区', '淡黄色是手工录入，灰色是自动算的。灰色列被覆盖后不会报错，但分表会静默算错。'),
  ('校验列必须全是√', '【业务流水】【资金日记账】【项目档案】的校验列出现红色，说明这一行有问题，要改掉。'),
@@ -2421,8 +2548,8 @@ KIND_HELP = [
      '销售开票金额、应扣管理费、应到成本票；欠业主·应收工程款；应收挂靠方·应收金额'),
     ('成本票', '我方（泓普/仟茂）开成本票给挂靠单位；补开、按 3% 扣点抵掉的也选这个', '泓普 / 仟茂', '挂靠单位', '成本票金额',
      '已到成本票（剩余开票金额就是还欠的）'),
-    ('挂靠代收', '业主把工程款付给了挂靠单位（钱还在挂靠单位手上）', '业主（民能/铜梁供电）', '挂靠单位', '业主付的钱',
-     '欠业主·开票已回款 → 欠业主未付款余额减少'),
+    ('挂靠代收', '业主（或上一层挂靠单位）把工程款付给了挂靠单位（钱还在挂靠单位手上）', '业主 / 上一层挂靠单位', '收钱的挂靠单位', '付的钱',
+     '收钱那家的欠业主·开票已回款 → 欠业主未付款余额减少'),
     ('我方收款', '挂靠单位把钱转给了我们（包括用代发工资、税差抵扣的）', '挂靠单位', '泓普 / 仟茂', '到我方的钱',
      '应收挂靠方·已到账 → 应收挂靠方余额减少'),
     ('管理费结算', '管理费实际扣了 / 结了', '泓普', '挂靠单位', '这次结的管理费',
@@ -2430,15 +2557,15 @@ KIND_HELP = [
     ('扣质保金', '挂靠单位扣了我方的质保金', '挂靠单位', '泓普', '扣的质保金', '应收挂靠方·质保金'),
     ('业主扣质保金', '业主扣在挂靠单位手上、还没放的质保金（金沁表那一列）', '业主', '挂靠单位', '扣的质保金',
      '欠业主·业主扣质保金（只单列出来看，不改欠款余额）'),
-    ('代垫应收', '我方替挂靠单位垫了钱（比如代交税费），对方答应退回', '挂靠单位', '泓普', '垫的钱',
-     '应收挂靠方·应收金额（对方退回时录「我方收款」冲掉）'),
-    ('已交税', '实际交了税（谁交的都算）', '挂靠单位', '税局', '交的税（退回来填负数）', '已交税 → 欠税未交减少'),
+    ('代垫应收', '我方替挂靠单位垫了钱（比如代交税费），对方答应退回', '挂靠单位', '泓普', '垫的钱（退回时填负数）',
+     '应收挂靠方·应收金额（对方退回时再录一行「代垫应收」负数冲掉）'),
+    ('已交税', '实际交了税（泓普代交的也选那家挂靠单位，谁交的写在摘要里）', '替哪家交的就选哪家', '税局', '交的税（退回来填负数）', '已交税 → 欠税未交减少'),
     ('退税', '税局退税（只做记录，不进任何汇总）', '税局', '挂靠单位', '退的税', '不进汇总'),
-    ('工资扣抵', '用工资表 / 代发工资顶掉劳务成本、不另开成本票', '泓普', '挂靠单位', '顶掉的金额', '代发工资；发票缺口里劳务票还差减少'),
+    ('工资扣抵', '用工资表 / 代发工资顶掉劳务成本、不另开成本票', '泓普', '挂靠单位', '顶掉的金额', '代发工资；只有【发票缺口】劳务票还差减少'),
     ('其他应收收回', '德誉嘉返的 4% 现金收到了', '挂靠单位', '泓普', '收到的返现', '返管理费·已收款'),
-    ('其他应付发生', '别人的钱过账到我们这（过账 / 合伙分成）', '付款方', '我方', '过账金额', '过账/合伙应付款·应付款'),
-    ('其他应付扣税', '过账款里我方代垫、要扣下来的税费', '泓普', '过账方', '扣的税费', '过账/合伙应付款·已付款'),
-    ('其他应付支付', '过账款真转出去了', '泓普', '收款方', '转出去的钱', '过账/合伙应付款·已付款'),
+    ('其他应付发生', '别人的钱过账到我们这（过账 / 合伙分成）', '过账单位', '过账单位', '过账金额', '过账/合伙应付款·应付款；往来台账'),
+    ('其他应付扣税', '过账款里我方代垫、要扣下来的税费', '泓普', '过账单位', '扣的税费', '过账/合伙应付款·已付款'),
+    ('其他应付支付', '过账款真转出去了（真正的收款人写在摘要里）', '泓普', '过账单位', '转出去的钱', '过账/合伙应付款·已付款'),
     ('其他', '以上都不是的（尽量别用，汇总里不体现）', '', '', '', '不进汇总')]
 for k, when, a, b, amt, where in KIND_HELP:
     r = hr[0] + 1
@@ -2461,14 +2588,15 @@ _tbl([('2026-09-23', 'A056', '成本票', '泓普', '华城', '3%专票', '劳�
 _p('3. 成本票还没开（欠着）—— 不用录任何东西。只要上面第 1 条的「销项开票」录了，系统自动算出应到成本票；'
    '欠多少直接看：单位明细「剩余开票金额」、单位汇总「还差成本票」、【发票缺口】按项目和票种（劳务/机械）列出来的「还差」。'
    '你截图里「想把欠的录进去不行」，是因为那几行业务类型选成了「挂靠代收 / 我方收款」—— 已经帮你改成了销项开票 + 成本票，'
-   '备注列写了「9.24 更正」。', bold=False)
+   '备注列写了「9.24 更正」。其中虎峰所双桥11社那张票金额原录 356,218.09，按它的成本票 453.66÷98% 反推改成了 462.92，请对照发票确认。',
+   bold=False)
 _p('4. 补成本票（之前欠的，现在补开了）：再录一行「成本票」，日期写补开那天，项目编号选原来那个项目，金额写这次补开的金额。'
    '可以分几次补，每次一行，剩余开票金额会一点点减到 0。不要回头去改原来那一行开票。')
 _tbl([('2026-10-10', 'A056', '成本票', '泓普', '华城', '3%专票', '劳务票', '2026.10.10补开剩余成本票：虎峰所双桥11社', 153.66, None, None,
        None, '接上例：先开了 300.00，这次补开剩下的 153.66，剩余开票金额变成 0')])
 _p('5. 跟挂靠单位约定「不提供成本票、按 3% 扣点子」（康欣那种）：也录一行「成本票」，发票性质选「不开票」，摘要写明「未开票按3%扣点子（不提供成本票）」，'
    '金额写抵掉的成本票金额 —— 这样还差成本票就清掉了，单位明细里这一行会显示成红色，跟真收到的票分得开。'
-   '扣下来的那 3% 如果对方是用钱给的，再录一行「我方收款」。')
+   '扣下来的那 3% 如果对方是用钱给的，再录一行「我方收款」。康欣原表 H68 列的扣点清单一共 9 笔 287,173.15，现在 9 笔都记成了「不开票」。')
 _tbl([('2026-07-15', 'A045', '成本票', '泓普', '康欣', '不开票', '劳务票', '2026.7.15康欣开劳务费到金沁：侣新线铜安1社｜未开票按3%扣点子（不提供成本票）',
        21690.88, None, None, None, '康欣明细「已到成本票」这一格标红')])
 _p('6. 业主付钱 → 挂靠单位 → 我们（两步分开录）', bold=True)
@@ -2480,7 +2608,8 @@ _tbl([('2026-10-08', 'A056', '挂靠代收', '民能', '华城', None, None, '20
        '应收挂靠方余额再 −9.26，这个项目就清了')],
      '一笔钱如果同时结了好几个项目，最好按项目分开录几行（原表一格记好几个项目的，这次已经帮你按项目拆开了，见对账差异说明）；'
      '实在分不开就挂在其中一个项目上，单位合计是对的，只是按项目看会有正有负。')
-_p('7. 我方替挂靠单位垫了钱（比如代交税费），对方答应退：录「代垫应收」；对方真退回来时录「我方收款」。', bold=False)
+_p('7. 我方替挂靠单位垫了钱（比如代交税费），对方答应退：录「代垫应收」；对方真退回来时再录一行「代垫应收」金额填负数'
+   '（摘要写「收回代垫」）。不要录成「我方收款」—— 那样会把「代收未转」也冲掉。', bold=False)
 _tbl([('2026-07-20', 'A001', '代垫应收', '华城', '泓普', None, None, '2026.7.20和华会计确定：3.31替华城交的设备票税费，结算时退回', 16883.46,
        None, None, None, '应收挂靠方·应收金额 +16,883.46')])
 _p('8. 红冲更正发票（德誉嘉 9.20 那种）：原来那一行一个字都不要改（7 月那张票确实开过，改了 7 月的报表就不对了）。另起两行：'
@@ -2490,29 +2619,49 @@ _tbl([('2026-09-20', 'A017', '销项开票', '德誉嘉', '民能', '13%专票',
        -1622.53, 0.04, 0, '扣管理费', '负数：管理费、应到成本票自动冲成负数；明细里标红'),
       ('2026-09-20', 'A017', '销项开票', '德誉嘉', '民能', '13%专票', '机械设备票', '2026.9.20德誉嘉重开发票到民能：永嘉所义和8社（更正后金额）',
        1662.53, 0.04, 0, '扣管理费', '按新票重新算')],
+     '原票右边税费录入区（P~S）填了税的，红冲那一行也要把这几格填成负数，重开那一行按新票填，不然欠税会多出一份。'
      '如果那张票对应的成本票也要红冲：同样再录一行「成本票」负数、一行重开的成本票。')
 _p('9. 录错了怎么改：', bold=True)
-for lab, t in [('刚录的、还没对过账', '直接在那一行把错的格子改掉（日期、金额、单位、类型都可以改），改完看校验列是 √。'),
+_kx_row = PATCH_ROWS['kx_fee']
+for lab, t in [('刚录的新行', '直接在那一行把错的格子改掉（日期、金额、单位、类型都可以改），改完看校验列是 √。'),
+               ('历史行（备注写着「历史导入」或「9.24…」的）', '只能改日期、金额、项目编号、摘要。这些行背后有隐藏的「来源表」，'
+                                 '改开票方 / 收款方不会换到别家单位，改业务类型也不会换列。要改单位或业务类型，一律用第 8 条红冲的办法：'
+                                 '录一行负数把原行冲掉，再按正确的单位 / 类型新录一行。'),
                ('已经对过账 / 给领导看过的月份', '别改原行，用第 8 条红冲的办法：负数冲掉、再录一行对的。这样以前那个月的数不会变。'),
-               ('整行都是多录的', '选中这一行 B 列到 S 列的格子按 Delete 清空内容（不要右键「删除行」）。'
-                                 '千万别删整行：删行会把下面的行号全部打乱，公式范围也会缩小。'
-                                 '9.24 回传版把业务流水第 20 行（康欣 2026.3.25 管理费结算 7,443.98）删了，康欣的管理费就少算了这一笔 —— 已经帮你恢复。'),
+               ('整行都是多录的', '只清空 B~N 列和 P~S 列（选中按 Delete），O 列和最右边灰色的列一格都别动；清空过的历史行也不要再拿来录新数据，'
+                                 '新数据一律录到最下面的空行。千万别右键「删除行」：删行会把下面的行号打乱，公式范围也会缩小。'
+                                 f'你回传的那份把第 20 行（康欣 2026.3.25 管理费结算 7,443.98）删了，康欣的管理费就少算了这一笔 —— '
+                                 f'已经帮你恢复（新版在第 {_kx_row} 行起，按 5 个项目拆开了）。'),
                ('明细表里看着像重复的行', '同一张原表行里的「开票、业主付款、转我方、管理费结算」在系统里是分开的几笔，摘要一样，看着像重复，其实不是。'
                                        '现在单位明细的摘要前面会带【挂靠代收】【我方收款】这种类型标签，一眼能分出来。不要去业务流水删。')]:
     _p(t, lab)
 _p('10. 「计费方式」三种怎么选，看到「不回成本票」要不要处理：', bold=True)
+_nc_other = [rr for rr in _nc if _fl[f'{C_["ocol"]}{rr}'].value != '已开成本票']
 for lab, t in [('扣管理费', '正常业务：管理费＝金额×管理费率，应到成本票＝金额−管理费。'),
                ('不扣管理费', '只借通道过票、不收管理费：管理费＝0，应到成本票＝全额（我方照样要回全额成本票）。'),
                ('不回成本票', '这张票本身就不需要我方回成本票：应到成本票＝0，也不算进「应收挂靠方」。历史数据里一共 '
-                             f'{len(_nc)} 行是这个：其中 {N_NC_COSTCOL} 行是挂靠单位之间互开的票（比如康欣开给金沁），在收票那家的原表里记在「已开成本票」列，'
-                             f'它是那家收到的成本票，不能再要求我方回一次；另外 {N_NC_OTHER} 行是合伙项目里原表就没要求回票的（康欣平滩所、哨楼村支线、维新、凤飞7社，安锐平滩所）。'),
-               ('要不要处理', '不用处理，都是照原表来的。只有你确认某一笔其实要我方回成本票时，把它改成「扣管理费」（填上费率）或「不扣管理费」就行，'
-                            '改完剩余开票金额 / 还差成本票马上出来。新录的票一般选「扣管理费」。')]:
+                             f'{len(_nc)} 行是这个，分两类：'),
+               (f'① {N_NC_COSTCOL} 行镜像行 · 不能改', '挂靠单位之间互开的票（比如康欣开给金沁）在收票那家原表里记在「已开成本票」列，'
+                             '系统照样还原了一行（备注写着「历史导入·原表「已开成本票」列还原」）。它是收票那家收到的成本票，'
+                             '开票那家另外还有一行真正的销项开票。这类行的计费方式一律不能改 —— 改了应到成本票会记到收票那家头上、还跟开票那家重复（校验列会报错）。'),
+               (f'② {N_NC_OTHER} 行合伙项目 · 可以改', '业务流水第 ' + '、'.join(str(x) for x in _nc_other) + ' 行'
+                             '（康欣平滩所、凤飞7社、哨楼村支线、维新，安锐平滩所），原表就没要求我方回票。确认其实要回票时，'
+                             '把计费方式改成「扣管理费」（填费率）或「不扣管理费」，剩余开票金额 / 还差成本票马上出来。'),
+               ('新录的票', '一般选「扣管理费」；只过票不收费的选「不扣管理费」；很少用到「不回成本票」。')]:
     _p(t, lab)
 _p('11. 挂靠单位之间互开的票（比如康欣开给金沁）：录一行「销项开票」，开票方康欣、收票方金沁，它算在康欣明细里。'
-   '如果金沁那边也要看到「收到了康欣这张成本票」，再录一行「成本票」开票方康欣、收票方金沁，最右边「计入汇总」选「否」（同一张票全公司只算一次）。')
-_p('12. 其他几类：德誉嘉返 4% 现金 —— 开票那行「返现率」填 4%，收到钱录「其他应收收回」；过账款 —— 收到录「其他应付发生」、'
-   '代垫的税费录「其他应付扣税」、转出去录「其他应付支付」；工资表顶劳务成本 —— 录「工资扣抵」。')
+   '如果金沁那边也要看到「收到了康欣这张成本票」，再录一行「成本票」开票方康欣、收票方金沁，最右边「计入汇总」选「否」—— '
+   '这一行会自动算到金沁头上（成本票认收票方），「计入汇总＝否」让【发票缺口】【链条核算】【项目利润】这些全公司口径的表不重复算这张票；'
+   '单位明细、单位汇总是一家一本账，照算。')
+_p('12. 上一层挂靠单位付钱给下一层（比如德誉嘉付给安锐、金沁付给康欣）：录「挂靠代收」，付款方选上一层、收款方选收钱那家 —— '
+   '会自动记到收钱那家头上，冲减它的「欠业主未付款余额」。')
+_p('13. 质保金：挂靠单位扣了我方的质保金录「扣质保金」；到期退回来时录一行「扣质保金」负数冲回，钱到账再录一行「我方收款」。'
+   '业主扣在挂靠单位手上的录「业主扣质保金」；业主放了以后录「挂靠代收」，再录一行「业主扣质保金」负数冲掉。')
+_p('14. 其他几类：德誉嘉 2026-7-22 以前的票是扣 8% 返 4%（历史已录好），以后的新票管理费率填 4%、返现率填 0；'
+   '以前挂着的返现收到时录「其他应收收回」。过账款 —— 收到录「其他应付发生」、代垫的税费录「其他应付扣税」、转出去录「其他应付支付」，'
+   '这三类开票/付款方、收票/收款方都选那家过账单位（比如迅驰），真正的收款人写在摘要里。'
+   '工资表顶劳务成本 —— 录「工资扣抵」（泓普→挂靠单位），只在【发票缺口】里扣减劳务票还差。'
+   '泓普替挂靠单位交的税 —— 录「已交税」，开票/付款方选那家挂靠单位。')
 
 _h1('五、资金日记账：出纳的账怎么搬过来')
 for lab, t in [('第 1 步', '出纳在自己那本《出纳日记账》里照常录（格式跟这边【资金日记账】B~M 列一模一样：日期、凭证种类、凭证编号、项目编号、费用类型、往来单位、报销人员、摘要、科目、借方、贷方、备注）。'),
@@ -2522,17 +2671,19 @@ for lab, t in [('第 1 步', '出纳在自己那本《出纳日记账》里照�
                           '「日期格式不对」＝日期粘成了文字；「借方贷方不能同时填」。'),
                ('科目怎么加', f'O 列「基础设置」就是科目清单，现在是 {"、".join(JOUR_ACCTS)}，还能再加 {N_ACCT - len(JOUR_ACCTS)} 个。'
                             'P 列填每个科目的期初余额（出纳账「期初余额表」里的数），右边自动算借方合计、贷方合计、期末余额。'),
-               ('项目编号', '日记账 E 列「项目编号」填项目档案里的编号（A001 这种），【项目利润】的「项目实际支出」才取得到；不填也行，只是项目利润那一列是 0。'),
-               ('本月合计这类行', '出纳账里「本月合计 / 本年累计 / 过次页 / 承前页 / 上年结转」这种行粘过来也没关系，系统认得出，不会重复算（校验列显示「合计/结转行·不计入」）。'),
+               ('项目编号', '日记账 E 列「项目编号」手填项目档案里的编号（A001 这种，这一列没有下拉，照项目档案抄），【项目利润】的「项目实际支出」才取得到；不填也行，只是项目利润那一列是 0。'),
+               ('本月合计这类行', '出纳账里「本月合计 / 本年累计 / 过次页 / 承前页 / 上年结转」这种行粘过来也没关系，系统认得出，不会重复算（校验列显示灰色的「√ 合计/结转行（不计入）」）。'),
+               ('期初余额', 'P 列期初余额现在还是空的，所以余额只是 9 月以来的净发生额。请把出纳账「期初余额表」里各科目的期初填进 P 列。'),
                ('原来那张旧日记账', '按你的要求已经删了（泓普/仟茂/现金三账户那张）。8 月那 34 笔是旧格式、旧科目（泓普/仟茂），没有搬过来；'
                                  '要的话在出纳账里按新科目录好再粘过来即可。')]:
     _p(t, lab)
 
 _h1('六、月底对账看哪里')
-for lab, t in [('某家单位欠多少', '打开那家的「××明细」：第 7 行期间合计。两组余额 ——「欠业主未付款余额」＝业主还没付给这家单位的；'
+for lab, t in [('某家单位欠多少', '打开那家的「××明细」看第 7 行。两组余额 ——「欠业主未付款余额」＝上游还没付给这家单位的；'
                                  '「应收挂靠方余额」＝这家单位还欠我们的（开票额 − 不回成本票的 + 代垫应收 − 管理费 − 质保金 − 已转我方）。'
-                                 '最后一行的滚动余额就是截至今天的数。'),
-               ('八家一起看', '【单位汇总】一家一行；【项目汇总】一个项目一行；【单位项目明细】上面选一家，看它名下每个项目。'),
+                                 '上面填了截止日期，第 7 行的余额就是截至那天的数；不填就是截至今天。金沁那张的第二组原表叫「康欣回款情况」，是金沁欠康欣的。'),
+               ('八家一起看', '【单位汇总】一家一行；【项目汇总】一个项目一行；【单位项目明细】上面选一家，看它名下每个项目。'
+                           '合计行是 8 家直接相加，链条项目上下两层各记一次，会有重复，以单家为准。'),
                ('成本票欠多少', '【发票缺口】按项目、按劳务票 / 机械票分开列还差多少。'),
                ('税欠多少', '【税费台账】。'),
                ('跟原表对不对得上', '【对账差异说明】8 家 × 18 个金额逐项跟你原来那份《对账明细》9.13 版的合计行比；最下面列了 9.24 这一轮改动的每一笔。'),
@@ -2540,7 +2691,11 @@ for lab, t in [('某家单位欠多少', '打开那家的「××明细」：第 
     _p(t, lab)
 
 _h1('七、校验列的提示是什么意思')
-for lab, t in [('日期格式不对', '日期写成了 2026.9.23 这种文字，改成 2026-9-23。'),
+for lab, t in [('未填日期', '这一行填了业务类型或金额，日期却空着。'),
+               ('日期格式不对', '日期写成了 2026.9.23 这种文字，改成 2026-9-23。'),
+               ('两边都不是挂靠单位，算不到哪家头上', '开票/付款方、收票/收款方至少一边要选挂靠单位（比如泓普代交的税，付款方选替哪家交的）。'),
+               ('这是收票方账上的镜像行…', '历史上「已开成本票」列还原出来的行，计费方式只能是「不回成本票」，改回去（见第四部分第 10 条）。'),
+               ('金额是文字，请改成数字（日记账）', '出纳账里的金额粘过来成了文字（比如带千分位的「1,000.00」），这一行不会算进余额。'),
                ('未选业务类型 / 未选项目编号', '对应那一格空着。'),
                ('项目编号不存在', '先去【项目档案】加这个项目。'),
                ('开票方不在单位档案 / 收款方不在单位档案', '单位名字要从下拉选，手打的对不上；新单位先去【单位档案】加。'),
@@ -2551,7 +2706,7 @@ for lab, t in [('日期格式不对', '日期写成了 2026.9.23 这种文字，
     _p(t, lab)
 page(ws, titles=None, landscape=True)
 ws.print_area = f'$A$1:${HL}${hr[0]}'
-print(f'  ✓ 操作流程（{hr[0]} 行，含 {len(KIND_HELP)} 种业务类型对照 + 12 个场景样例）')
+print(f'  ✓ 操作流程（{hr[0]} 行，含 {len(KIND_HELP)} 种业务类型对照 + 14 个场景）')
 
 
 # ============================================================ 收尾

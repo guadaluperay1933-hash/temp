@@ -20,7 +20,7 @@ def chk(name, a, b, tol=0.05):
 def find_col(ws, hdr_row, name):
     for c in range(1, ws.max_column+1):
         v = ws.cell(hdr_row, c).value
-        if v and str(v).replace('\n','') == name.replace('\n',''):
+        if v and str(v).replace('\n','').replace('(截至截止日)','') == name.replace('\n',''):
             return c
     return None
 

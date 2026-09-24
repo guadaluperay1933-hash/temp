@@ -38,7 +38,12 @@ for r in range(5, 2005):
         ocol = ocol_raw
     src = wf[f'AI{r}'].value
     payer, payee = wf[f'E{r}'].value, wf[f'F{r}'].value
-    ubel = src or (payer if UTYPE.get(payer) == '挂靠单位' else (payee if UTYPE.get(payee) == '挂靠单位' else ''))
+    eh, fh = UTYPE.get(payer) == '挂靠单位', UTYPE.get(payee) == '挂靠单位'
+    if src: ubel = src
+    elif kind in ('成本票', '挂靠代收', '业主扣质保金', '管理费结算', '工资扣抵'):
+        ubel = payee if fh else (payer if eh else '')
+    else:
+        ubel = payer if eh else (payee if fh else '')
     amt, rate, flag = N(wf[f'J{r}'].value), N(wf[f'K{r}'].value), wf[f'M{r}'].value
     mfee = 0.0 if kind != '销项开票' or flag == '不扣管理费' else R2(amt * rate)
     due = 0.0 if kind != '销项开票' or flag == '不回成本票' else R2(amt - mfee)
@@ -72,16 +77,17 @@ def tot(rows):
         t['tax'] += x['tax']
     t['a_left'] = t['sale'] - t['a_got']
     t['b_left'] = t['b_ar'] - t['b_fee'] - t['b_bond'] - t['b_got']
-    t['transit'] = t['a_got'] - t['b_got']
+    t['transit'] = t['a_got'] - t['b_got'] - t['b_fee'] - t['b_bond']
+    t['gap'] = t['due'] - t['done']
     return t
 
 # ---------- 单位汇总 ----------
 su = wbv['单位汇总']
-HCOL = {str(su.cell(5, c).value).replace('\n', ''): c for c in range(1, 30) if su.cell(5, c).value}
+HCOL = {str(su.cell(5, c).value).replace('\n', '').replace('(截至截止日)', ''): c for c in range(1, 30) if su.cell(5, c).value}
 MAPU = {'开票额(该单位开出)': 'sale', '应扣管理费': 'mfee', '应到成本票': 'due', '已收成本票': 'done',
         '业主已付给挂靠单位': 'a_got', '欠业主未付款余额': 'a_left', '应收挂靠方金额': 'b_ar',
         '管理费已结算': 'b_fee', '扣质保金': 'b_bond', '挂靠单位已转我方': 'b_got',
-        '应收挂靠方余额': 'b_left', '挂靠单位代收未转': 'transit'}
+        '应收挂靠方余额': 'b_left', '挂靠单位代收未转': 'transit', '还差成本票': 'gap'}
 for k in MAPU: assert k in HCOL, ('单位汇总缺列', k)
 UT = {}
 for r in range(7, 47):
@@ -114,7 +120,7 @@ for u in HOLD:
 
 # ---------- 项目汇总：逐项目 ----------
 sp = wbv['项目汇总']
-HP = {str(sp.cell(5, c).value).replace('\n', ''): c for c in range(1, 30) if sp.cell(5, c).value}
+HP = {str(sp.cell(5, c).value).replace('\n', '').replace('(截至截止日)', ''): c for c in range(1, 30) if sp.cell(5, c).value}
 NEG = []
 for r in range(7, 307):
     code = sp[f'A{r}'].value
@@ -130,7 +136,7 @@ for lab, key in MAPU.items():
 # ---------- 单位项目明细（当前选的那家） ----------
 sx = wbv['单位项目明细']
 pick = sx['B3'].value
-HX = {str(sx.cell(5, c).value).replace('\n', ''): c for c in range(1, 30) if sx.cell(5, c).value}
+HX = {str(sx.cell(5, c).value).replace('\n', '').replace('(截至截止日)', ''): c for c in range(1, 30) if sx.cell(5, c).value}
 for lab, key in MAPU.items():
     chk(f'单位项目明细[{pick}] 合计 {lab}', sx.cell(6, HX[lab]).value,
         tot([x for x in FL if x['ubel'] == pick and x['proj']])[key])
@@ -185,8 +191,9 @@ for row in wh.iter_rows(min_row=4, max_row=30):
         if isinstance(c.value, str) and c.value and wh.cell(c.row + 1, c.column).value is not None:
             cards[c.value] = wh.cell(c.row + 1, c.column).value
 chk('首页 资金余额', cards.get('资金余额（日记账各科目合计）'), sum(bal[a] for a in ACC))
-chk('首页 欠业主未付款余额', cards.get('欠业主未付款余额'), tall['a_left'])
-chk('首页 应收挂靠方余额', cards.get('应收挂靠方余额'), tall['b_left'])
+chk('首页 欠业主未付款（8家相加）', cards.get('欠业主未付款（8家相加）'), tall['a_left'])
+chk('首页 应收挂靠方（8家相加）', cards.get('应收挂靠方（8家相加）'), tall['b_left'])
+chk('首页 还差成本票未开', cards.get('还差成本票未开'), sum(max(UT[u]['gap'], 0) for u in UT if UT[u]['gap'] > 0.5))
 
 # ---------- 报告 ----------
 print(f'\n共核 {NCHK[0]} 项，不一致 {len(BAD)} 项')
