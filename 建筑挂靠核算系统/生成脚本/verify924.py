@@ -191,8 +191,8 @@ for row in wh.iter_rows(min_row=4, max_row=30):
         if isinstance(c.value, str) and c.value and wh.cell(c.row + 1, c.column).value is not None:
             cards[c.value] = wh.cell(c.row + 1, c.column).value
 chk('首页 资金余额', cards.get('资金余额（日记账各科目合计）'), sum(bal[a] for a in ACC))
-chk('首页 欠业主未付款（8家相加）', cards.get('欠业主未付款（8家相加）'), tall['a_left'])
-chk('首页 应收挂靠方（8家相加）', cards.get('应收挂靠方（8家相加）'), tall['b_left'])
+chk('首页 欠业主未付款（各家相加）', cards.get('欠业主未付款（各家相加）'), tall['a_left'])
+chk('首页 应收挂靠方（各家相加）', cards.get('应收挂靠方（各家相加）'), tall['b_left'])
 chk('首页 还差成本票未开', cards.get('还差成本票未开'), sum(max(UT[u]['gap'], 0) for u in UT if UT[u]['gap'] > 0.5))
 
 # ---------- 报告 ----------
